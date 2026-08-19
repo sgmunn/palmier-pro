@@ -46,8 +46,14 @@ final class GenerationService {
         onComplete: (@MainActor (MediaAsset) -> Void)? = nil,
         onFailure: (@MainActor () -> Void)? = nil
     ) -> String {
+        var routedInput = genInput
+        let route = CustomGenerationConfiguration.shared.route
+        routedInput.generationBackendID = route.rawValue
+        if route == .custom, case .image(let model) = ModelRegistry.byId[genInput.model] {
+            routedInput.remoteModel = model.entry.remoteModel
+        }
         let count = max(1, min(4, numImages))
-        let baseName = name ?? String(genInput.prompt.prefix(30))
+        let baseName = name ?? String(routedInput.prompt.prefix(30))
 
         let resolvedFolderId = folderId.flatMap { id in
             editor.folder(id: id) != nil ? id : nil
@@ -56,7 +62,7 @@ final class GenerationService {
         let destDir = Self.destinationDirectory(for: projectURL)
 
         for outputIndex in 0..<count {
-            var placeholderInput = genInput
+            var placeholderInput = routedInput
             placeholderInput.outputIndex = outputIndex
             let placeholder = createPlaceholder(
                 type: assetType,
@@ -71,10 +77,50 @@ final class GenerationService {
             placeholders.append(placeholder)
         }
         let primaryId = placeholders[0].id
-        captureSubmission(genInput: genInput, assetType: assetType, outputCount: count, editor: editor)
+        captureSubmission(genInput: routedInput, assetType: assetType, outputCount: count, editor: editor)
 
         Task { @MainActor in
             do {
+                if route == .custom {
+                    guard references.isEmpty, trimmedSourceOverride == nil, preUploadedURLs?.isEmpty != false else {
+                        throw CustomGenerationError.unsupported(
+                            "Reference-image generation is not supported by the custom gateway yet."
+                        )
+                    }
+                    var finalInput = routedInput
+                    if finalInput.createdAt == nil { finalInput.createdAt = Date() }
+                    for (outputIndex, placeholder) in placeholders.enumerated() {
+                        var storedInput = finalInput
+                        storedInput.outputIndex = outputIndex
+                        updateGenerationMetadata(placeholder, editor: editor) { $0 = storedInput }
+                    }
+                    guard case .image(let imageParams) = buildParams([]) else {
+                        throw CustomGenerationError.unsupported(
+                            "The custom gateway currently supports image generation only."
+                        )
+                    }
+                    guard let remoteModel = finalInput.remoteModel, !remoteModel.isEmpty else {
+                        throw CustomGenerationError.invalidConfiguration("The custom model mapping is missing.")
+                    }
+                    let configuration = try await CustomGenerationConfiguration.shared.snapshot()
+                    for placeholder in placeholders {
+                        updateGenerationMetadata(placeholder, editor: editor, status: .generating)
+                    }
+                    editor.onProjectCheckpointRequired?()
+                    let result = try await CustomGenerationRunner().generateImages(
+                        configuration: configuration,
+                        remoteModel: remoteModel,
+                        params: imageParams
+                    )
+                    await self.finalizeCustomSuccess(
+                        stagedFiles: result.stagedFiles,
+                        placeholders: placeholders,
+                        editor: editor,
+                        onComplete: onComplete,
+                        onFailure: onFailure
+                    )
+                    return
+                }
                 let prepared = try await self.prepareReferences(
                     references: references,
                     trimmedSourceOverride: trimmedSourceOverride,
@@ -85,7 +131,7 @@ final class GenerationService {
                 defer { Self.cleanupTempFiles(prepared.tempFiles) }
                 let uploaded = prepared.uploaded
 
-                var finalGenInput = genInput
+                var finalGenInput = routedInput
                 if let snapshotRefs {
                     snapshotRefs(&finalGenInput, uploaded)
                 } else {
@@ -120,9 +166,10 @@ final class GenerationService {
                 )
             } catch {
                 let message = error.localizedDescription
-                Log.generation.error("upload failed model=\(genInput.model) error=\(message)")
+                Log.generation.error("generation setup failed model=\(routedInput.model) error=\(message)")
+                let statusMessage = route == .hosted ? "Upload failed: \(message)" : message
                 for placeholder in placeholders {
-                    updateGenerationMetadata(placeholder, editor: editor, status: .failed("Upload failed: \(message)"))
+                    updateGenerationMetadata(placeholder, editor: editor, status: .failed(statusMessage))
                 }
                 onFailure?()
             }
@@ -737,6 +784,58 @@ final class GenerationService {
         } else {
             onFailure?()
         }
+    }
+
+    private func finalizeCustomSuccess(
+        stagedFiles: [URL],
+        placeholders: [MediaAsset],
+        editor: EditorViewModel,
+        onComplete: (@MainActor (MediaAsset) -> Void)?,
+        onFailure: (@MainActor () -> Void)?
+    ) async {
+        guard !stagedFiles.isEmpty else {
+            for placeholder in placeholders {
+                updateGenerationMetadata(placeholder, editor: editor, status: .failed("Gateway returned no images."))
+            }
+            onFailure?()
+            return
+        }
+        var finalized: [MediaAsset] = []
+        for (index, placeholder) in placeholders.enumerated() {
+            let outputIndex = placeholder.generationInput?.outputIndex ?? index
+            guard stagedFiles.indices.contains(outputIndex) else {
+                updateGenerationMetadata(placeholder, editor: editor, status: .failed("No image for placeholder."))
+                continue
+            }
+            let stagedURL = stagedFiles[outputIndex]
+            updateGenerationMetadata(placeholder, editor: editor, status: .downloading)
+            do {
+                let ext = stagedURL.pathExtension.isEmpty ? "png" : stagedURL.pathExtension.lowercased()
+                placeholder.url = placeholder.url.deletingPathExtension().appendingPathExtension(ext)
+                placeholder.url = try await editor.commitStagedProjectMedia(
+                    stagedURL,
+                    filename: placeholder.url.lastPathComponent
+                )
+                editor.importMediaAsset(placeholder, skipAppend: true)
+                if await editor.finalizeImportedAsset(placeholder) {
+                    onComplete?(placeholder)
+                    finalized.append(placeholder)
+                }
+            } catch {
+                updateGenerationMetadata(placeholder, editor: editor, status: .failed(error.localizedDescription))
+            }
+        }
+        await CustomGenerationRunner.remove(stagedFiles)
+        if let first = finalized.first {
+            AppNotifications.generationComplete(
+                assetId: first.id,
+                projectURL: editor.projectURL,
+                assetName: first.name,
+                assetType: first.type,
+                count: finalized.count
+            )
+        }
+        if finalized.count < placeholders.count { onFailure?() }
     }
 
 }

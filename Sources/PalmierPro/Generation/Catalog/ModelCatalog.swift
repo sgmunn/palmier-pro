@@ -53,6 +53,7 @@ final class ModelCatalog {
     @ObservationIgnored private var subscription: AnyCancellable?
     @ObservationIgnored private var didConfigure = false
     @ObservationIgnored private var retryTask: Task<Void, Never>?
+    @ObservationIgnored private var catalogTask: Task<Void, Never>?
     @ObservationIgnored private var failureCount = 0
 
     private init() {}
@@ -60,7 +61,33 @@ final class ModelCatalog {
     func configure() {
         guard !didConfigure else { return }
         didConfigure = true
-        startSubscription()
+        reload()
+    }
+
+    func reload() {
+        subscription?.cancel()
+        subscription = nil
+        retryTask?.cancel()
+        catalogTask?.cancel()
+        isLoaded = false
+        lastError = nil
+        switch CustomGenerationConfiguration.shared.route {
+        case .hosted:
+            startSubscription()
+        case .custom:
+            catalogTask = Task { [weak self] in
+                do {
+                    let entries = try await CustomGenerationCatalog.load()
+                    guard !Task.isCancelled else { return }
+                    self?.apply(entries)
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    self?.lastError = error.localizedDescription
+                    self?.isLoaded = true
+                    Log.generation.error("Custom model catalog failed: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     private func startSubscription() {
@@ -165,6 +192,8 @@ struct CatalogEntry: Decodable, Sendable {
     let creditsPerSecondUpscale: Double?
     let upscalePricing: UpscalePricing?
     let paidOnly: Bool
+    let generationBackendID: String?
+    let remoteModel: String?
 
     enum Kind: String, Decodable, Sendable { case video, image, audio, upscale }
     enum ResponseShape: String, Decodable, Sendable {
@@ -210,6 +239,7 @@ struct CatalogEntry: Decodable, Sendable {
         case id, kind, displayName, providerIconKey, providerName, description, allowedEndpoints, responseShape, uiCapabilities
         case creditsPerSecond, audioDiscountRate, creditsPerImage, qualities
         case audioPricing, creditsPerSecondUpscale, upscalePricing, paidOnly
+        case generationBackendID, remoteModel
     }
 
     init(from decoder: Decoder) throws {
@@ -230,6 +260,8 @@ struct CatalogEntry: Decodable, Sendable {
         self.creditsPerSecondUpscale = try c.decodeIfPresent(Double.self, forKey: .creditsPerSecondUpscale)
         self.upscalePricing = try c.decodeIfPresent(UpscalePricing.self, forKey: .upscalePricing)
         self.paidOnly = try c.decodeIfPresent(Bool.self, forKey: .paidOnly) ?? false
+        self.generationBackendID = try c.decodeIfPresent(String.self, forKey: .generationBackendID)
+        self.remoteModel = try c.decodeIfPresent(String.self, forKey: .remoteModel)
         switch self.kind {
         case .video:
             self.uiCapabilities = .video(try c.decode(VideoCaps.self, forKey: .uiCapabilities))
