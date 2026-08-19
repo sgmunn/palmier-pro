@@ -2,7 +2,9 @@ import AVFoundation
 import Foundation
 
 extension ToolExecutor {
-    private var canUsePaidModels: Bool { AccountService.shared.isPaid }
+    private var canUsePaidModels: Bool {
+        CustomGenerationConfiguration.shared.route == .custom || AccountService.shared.isPaid
+    }
     private func modelAvailable(paidOnly: Bool) -> Bool { canUsePaidModels || !paidOnly }
 
     private func requirePlan(for modelId: String, paidOnly: Bool) throws {
@@ -34,11 +36,8 @@ extension ToolExecutor {
 
     func generate(_ editor: EditorViewModel, _ args: [String: Any], type: ClipType) throws -> ToolResult {
         let prompt = args["prompt"] == nil ? "" : try args.requireString("prompt")
-        guard AccountService.shared.isSignedIn else {
-            throw ToolError("Generation requires signing in to Palmier. Tell the user to sign in.")
-        }
-        guard AccountService.shared.hasCredits else {
-            throw ToolError("Out of credits. Tell the user to add credits or subscribe to keep generating.")
+        if case .refused(let reason) = GenerationAccess.evaluate() {
+            throw ToolError(reason)
         }
         switch type {
         case .sequence:
@@ -261,6 +260,9 @@ extension ToolExecutor {
         guard let model = ImageModelConfig.allModels.first(where: { $0.id == modelId }) else {
             throw ToolError("Unknown model '\(modelId)'. Available: \(ImageModelConfig.allModels.map(\.id).joined(separator: ", "))")
         }
+        if case .refused(let reason) = GenerationAccess.evaluate(modelID: model.id) {
+            throw ToolError(reason)
+        }
         try requirePlan(for: model.id, paidOnly: model.paidOnly)
         let aspectRatio = args.string("aspectRatio") ?? model.aspectRatios.first ?? ""
         let resolution = args.string("resolution") ?? model.resolutions?.first
@@ -300,11 +302,8 @@ extension ToolExecutor {
     }
 
     func generateAudio(_ editor: EditorViewModel, _ args: [String: Any]) async throws -> ToolResult {
-        guard AccountService.shared.isSignedIn else {
-            throw ToolError("Generation requires signing in to Palmier. Tell the user to sign in.")
-        }
-        guard AccountService.shared.hasCredits else {
-            throw ToolError("Out of credits. Tell the user to add credits or subscribe to keep generating.")
+        if case .refused(let reason) = GenerationAccess.evaluate() {
+            throw ToolError(reason)
         }
         let modelId = try args.string("model") ?? defaultModelId(
             AudioModelConfig.allModels.map { (id: $0.id, paidOnly: $0.paidOnly) }, kind: "audio")

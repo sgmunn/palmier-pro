@@ -165,6 +165,11 @@ struct GenerationView: View {
             }
         }
         .frame(maxHeight: max(0, CGFloat(maxPanelHeight)), alignment: .top)
+        .onAppear { normalizeGenerationType() }
+        .onChange(of: ModelCatalog.shared.isLoaded) { _, loaded in
+            guard loaded else { return }
+            normalizeGenerationType()
+        }
         .onChange(of: upscaleModels.isEmpty) { _, isEmpty in
             if isEmpty && selectedType == .upscale { selectedType = .video }
         }
@@ -172,10 +177,22 @@ struct GenerationView: View {
 
     private var catalogLoadingView: some View {
         VStack(spacing: AppTheme.Spacing.md) {
-            ProgressView()
-            Text(L10n.string("Loading models…"))
-                .font(.system(size: AppTheme.FontSize.sm))
-                .foregroundStyle(AppTheme.Text.secondaryColor)
+            if let error = ModelCatalog.shared.lastError {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: AppTheme.FontSize.md))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                Text(verbatim: error)
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+                    .multilineTextAlignment(.center)
+                Button(L10n.string("Retry")) { ModelCatalog.shared.reload() }
+                    .buttonStyle(.capsule(.secondary, size: .regular))
+            } else {
+                ProgressView()
+                Text(L10n.string("Loading models…"))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.secondaryColor)
+            }
         }
         .frame(maxWidth: .infinity)
         .frame(height: AppTheme.GenerationPanel.loadingHeight)
@@ -262,6 +279,7 @@ struct GenerationView: View {
         .background { panelChrome }
         .overlay(alignment: .top) { resizeHandle }
         .onAppear {
+            normalizeGenerationType()
             let hadSeed = editor.pendingPanelSeed != nil
             consumePendingPanelSeed()
             // A seeded edit may reuse a now-disabled model; keep its selection.

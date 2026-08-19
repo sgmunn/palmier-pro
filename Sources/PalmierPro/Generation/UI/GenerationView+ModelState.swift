@@ -21,20 +21,33 @@ extension GenerationView {
     var upscaleModel: UpscaleModelConfig { selectedModel(upscaleModels, at: selectedUpscaleModelIndex) }
 
     var catalogReady: Bool {
-        !videoModels.isEmpty
-            && !imageModels.isEmpty
-            && !audioModels.isEmpty
-            && (selectedType != .upscale || !upscaleModels.isEmpty)
+        guard ModelCatalog.shared.isLoaded else { return false }
+        return switch selectedType {
+        case .video: !videoModels.isEmpty
+        case .image: !imageModels.isEmpty
+        case .audio: !audioModels.isEmpty
+        case .upscale: !upscaleModels.isEmpty
+        }
     }
 
     var availableGenerationTypes: [GenerationType] {
-        upscaleModels.isEmpty ? GenerationType.allCases.filter { $0 != .upscale } : GenerationType.allCases
+        GenerationType.allCases.filter {
+            switch $0 {
+            case .video: !videoModels.isEmpty
+            case .image: !imageModels.isEmpty
+            case .audio: !audioModels.isEmpty
+            case .upscale: !upscaleModels.isEmpty
+            }
+        }
     }
 
-    var aiAllowed: Bool { account.aiAllowed }
+    var aiAllowed: Bool {
+        if case .allowed = GenerationAccess.evaluate(modelID: currentModelId) { return true }
+        return false
+    }
 
     var currentModelLocked: Bool {
-        guard !account.isPaid else { return false }
+        guard CustomGenerationConfiguration.shared.route == .hosted, !account.isPaid else { return false }
         switch selectedType {
         case .video: return videoModel.paidOnly
         case .image: return imageModel.paidOnly
@@ -48,7 +61,9 @@ extension GenerationView {
         return models[safeIndex]
     }
 
-    private func isAvailable(_ paidOnly: Bool) -> Bool { account.isPaid || !paidOnly }
+    private func isAvailable(_ paidOnly: Bool) -> Bool {
+        CustomGenerationConfiguration.shared.route == .custom || account.isPaid || !paidOnly
+    }
 
     var enabledVideoModels: [(index: Int, model: VideoModelConfig)] {
         videoModels.enumerated()
@@ -118,6 +133,20 @@ extension GenerationView {
                 selectedUpscaleModelIndex = enabledUpscaleModels.first?.index ?? 0
             }
         }
+    }
+
+    func normalizeGenerationType() {
+        selectedType = Self.normalizedGenerationType(
+            selectedType,
+            available: availableGenerationTypes
+        )
+    }
+
+    static func normalizedGenerationType(
+        _ selectedType: GenerationType,
+        available: [GenerationType]
+    ) -> GenerationType {
+        available.contains(selectedType) ? selectedType : available.first ?? selectedType
     }
 
     var trimmedPrompt: String { prompt.trimmingCharacters(in: .whitespaces) }

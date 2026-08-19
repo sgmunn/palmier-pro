@@ -65,8 +65,8 @@ struct AIEditMenu: View {
     }
 
     private var aiAllowed: Bool {
-        let account = AccountService.shared
-        return account.isSignedIn && !account.isMisconfigured
+        if case .allowed = GenerationAccess.evaluate() { return true }
+        return false
     }
 
     private var availableActions: [EditAction] {
@@ -91,7 +91,8 @@ struct AIEditMenu: View {
         action: EditAction,
         perform: @escaping () -> Void
     ) -> some View {
-        if action.requiresPaidPlan && !AccountService.shared.isPaid {
+        if CustomGenerationConfiguration.shared.route == .hosted
+            && action.requiresPaidPlan && !AccountService.shared.isPaid {
             Button {
                 SettingsWindowController.shared.show(tab: .account)
             } label: {

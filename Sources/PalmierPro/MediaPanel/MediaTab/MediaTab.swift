@@ -295,7 +295,6 @@ struct MediaTab: View {
     }
 
     private var actionsRow: some View {
-        let showGenerate = !AccountService.shared.isMisconfigured
         return HStack(spacing: AppTheme.Spacing.xs) {
             if editor.isMediaPanelSearchExpanded {
                 ExpandablePanelSearch(
@@ -306,7 +305,7 @@ struct MediaTab: View {
             } else {
                 toolbarButton(title: L10n.string("Import"), action: importMedia)
                     .tourAnchor(.importButton)
-                if showGenerate {
+                if GenerationAccess.canOpenPanel {
                     toolbarButton(title: L10n.string("Generate"), prominent: true, action: toggleGenerationPanel)
                         .tourAnchor(.generateButton)
                 }

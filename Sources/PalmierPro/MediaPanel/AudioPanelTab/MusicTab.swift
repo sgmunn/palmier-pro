@@ -101,7 +101,8 @@ struct MusicSection: View {
     }
 
     private var canGenerate: Bool {
-        model != nil && validationNote == nil && !isGenerating
+        guard let model, case .allowed = GenerationAccess.evaluate(modelID: model.id) else { return false }
+        return validationNote == nil && !isGenerating
     }
 
     private var generateLabel: String {
@@ -252,8 +253,8 @@ struct MusicSection: View {
                 .buttonStyle(.capsule(.prominent))
                 .fixedSize()
                 .focusable(false)
-                .disabled(!canGenerate || !account.aiAllowed)
-                .help(account.aiAllowed ? String() : L10n.string("Sign in to generate"))
+                .disabled(!canGenerate)
+                .help(canGenerate ? String() : L10n.string("Generation is unavailable."))
 
                 agentMenu
             }

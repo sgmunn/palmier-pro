@@ -60,6 +60,8 @@
 "AI is unavailable" = "AI is unavailable";
 "AI transcription" = "AI transcription";
 "AI videos" = "AI videos";
+"API key" = "API key";
+"API key saved" = "API key saved";
 "About Palmier Pro" = "About Palmier Pro";
 "Account" = "Account";
 "Account settings" = "Account settings";
@@ -121,9 +123,11 @@
 "Auto" = "Auto";
 "Available" = "Available";
 "Back" = "Back";
+"Backend" = "Backend";
 "Background" = "Background";
 "Basic Correction" = "Basic Correction";
 "Beat detection failed. Check that the media file is reachable, then retry." = "Beat detection failed. Check that the media file is reachable, then retry.";
+"Billed by your custom gateway." = "Billed by your custom gateway.";
 "Blacks" = "Blacks";
 "Blend" = "Blend";
 "Blends denoised and original audio — lower this if voices sound thin or over-compressed." = "Blends denoised and original audio — lower this if voices sound thin or over-compressed.";
@@ -259,6 +263,7 @@
 "Crop applies to one clip at a time" = "Crop applies to one clip at a time";
 "Curves" = "Curves";
 "Custom Aspect Ratio" = "Custom Aspect Ratio";
+"Custom Gateway" = "Custom Gateway";
 "Custom…" = "Custom…";
 "Cut" = "Cut";
 "Cut to the beat" = "Cut to the beat";
@@ -356,6 +361,8 @@
 "Enhance resolution or frame rate with AI" = "Enhance resolution or frame rate with AI";
 "Enhanced with FLUX.3 at 1080p." = "Enhanced with FLUX.3 at 1080p.";
 "Enter Full Screen" = "Enter Full Screen";
+"Enter a gateway API key." = "Enter a gateway API key.";
+"Enter a valid gateway URL." = "Enter a valid gateway URL.";
 "Estimated cost. Actual billing may differ slightly." = "Estimated cost. Actual billing may differ slightly.";
 "Exclusion" = "Exclusion";
 "Expand" = "Expand";
@@ -370,6 +377,7 @@
 "Exposure" = "Exposure";
 "Extend" = "Extend";
 "Extends captions across short gaps and holds the final caption." = "Extends captions across short gaps and holds the final caption.";
+"External" = "External";
 "Extra Large" = "Extra Large";
 "Extract Audio" = "Extract Audio";
 "FLUX Enhance" = "FLUX Enhance";
@@ -415,6 +423,7 @@
 "Full changelog" = "Full changelog";
 "Gain" = "Gain";
 "Gamma" = "Gamma";
+"Gateway URL" = "Gateway URL";
 "General" = "General";
 "Generate" = "Generate";
 "Generate B-roll" = "Generate B-roll";
@@ -434,8 +443,10 @@
 "Generating…" = "Generating…";
 "Generation Failed" = "Generation Failed";
 "Generation Input" = "Generation Input";
+"Generation backend" = "Generation backend";
 "Generation complete" = "Generation complete";
 "Generation in progress" = "Generation in progress";
+"Generation is unavailable." = "Generation is unavailable.";
 "Generation panel" = "Generation panel";
 "Get Anthropic API key" = "Get Anthropic API key";
 "Get OpenAI API key" = "Get OpenAI API key";
@@ -690,6 +701,7 @@
 "Overlay" = "Overlay";
 "Overline" = "Overline";
 "Padding" = "Padding";
+"Palmier Hosted" = "Palmier Hosted";
 "Palmier Project" = "Palmier Project";
 "Palmier couldn't load this clip's source file. It may be missing, on an ejected drive, or unreadable." = "Palmier couldn't load this clip's source file. It may be missing, on an ejected drive, or unreadable.";
 "Palmier couldn't load this source file. It may be missing, on an ejected drive, or unreadable." = "Palmier couldn't load this source file. It may be missing, on an ejected drive, or unreadable.";

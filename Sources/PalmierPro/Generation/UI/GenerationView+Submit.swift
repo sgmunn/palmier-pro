@@ -82,6 +82,7 @@ extension GenerationView {
     }
 
     private var remainingCredits: Int? {
+        guard CustomGenerationConfiguration.shared.route == .hosted else { return nil }
         guard let budget = AccountService.shared.budgetCredits else { return nil }
         return max(0, budget - AccountService.shared.spentCredits)
     }
@@ -92,12 +93,16 @@ extension GenerationView {
     }
 
     private var canAffordGeneration: Bool {
+        guard CustomGenerationConfiguration.shared.route == .hosted else { return true }
         guard let left = remainingCredits else { return true }
         if let cost = estimatedCost { return cost <= left }
         return left > 0
     }
 
     private var costHelpText: String {
+        if CustomGenerationConfiguration.shared.route == .custom {
+            return L10n.string("Billed by your custom gateway.")
+        }
         guard let cost = estimatedCost else {
             return L10n.string("Estimated cost. Actual billing may differ slightly.")
         }
@@ -114,7 +119,9 @@ extension GenerationView {
         HStack(spacing: AppTheme.Spacing.xs) {
             Image(systemName: "dollarsign.circle.fill")
                 .font(.system(size: AppTheme.FontSize.sm))
-            Text(verbatim: estimatedCost.map { $0.formatted() } ?? "—")
+            Text(verbatim: CustomGenerationConfiguration.shared.route == .custom
+                ? L10n.string("External")
+                : estimatedCost.map { $0.formatted() } ?? "—")
                 .font(.system(size: AppTheme.FontSize.xs, weight: .medium))
                 .monospacedDigit()
                 .lineLimit(1)
@@ -126,9 +133,18 @@ extension GenerationView {
     var submitButton: some View {
         Button {
             if aiAllowed { submitGeneration() }
-            else if !account.isMisconfigured { Task { await account.signInWithGoogle() } }
+            else if CustomGenerationConfiguration.shared.route == .custom {
+                SettingsWindowController.shared.show(tab: .models)
+            }
+            else if CustomGenerationConfiguration.shared.route == .hosted && !account.isMisconfigured {
+                Task { await account.signInWithGoogle() }
+            }
         } label: {
-            Image(systemName: aiAllowed ? "arrow.up" : "person.crop.circle")
+            Image(systemName: aiAllowed
+                ? "arrow.up"
+                : CustomGenerationConfiguration.shared.route == .custom
+                    ? "gearshape"
+                    : "person.crop.circle")
                 .font(.system(size: AppTheme.FontSize.sm, weight: .bold))
                 .frame(width: AppTheme.IconSize.sm, height: AppTheme.IconSize.sm)
         }
@@ -138,12 +154,24 @@ extension GenerationView {
         .tint(AppTheme.Accent.primary)
         .accessibilityLabel(aiAllowed
             ? (selectedType == .upscale ? L10n.string("Upscale") : L10n.string("Generate"))
-            : L10n.string("Sign in"))
-        .disabled(aiAllowed ? !canSubmit : account.isMisconfigured || account.isSigningIn)
-        .opacity((aiAllowed ? canSubmit : !account.isMisconfigured && !account.isSigningIn) ? AppTheme.Opacity.opaque : AppTheme.Opacity.strong)
+            : CustomGenerationConfiguration.shared.route == .custom
+                ? L10n.string("Settings")
+                : L10n.string("Sign in"))
+        .disabled(aiAllowed
+            ? !canSubmit
+            : CustomGenerationConfiguration.shared.route == .hosted
+                && (account.isMisconfigured || account.isSigningIn))
+        .opacity((aiAllowed
+            ? canSubmit
+            : CustomGenerationConfiguration.shared.route == .custom
+                || (!account.isMisconfigured && !account.isSigningIn))
+            ? AppTheme.Opacity.opaque
+            : AppTheme.Opacity.strong)
         .help(aiAllowed
             ? (selectedType == .upscale ? L10n.string("Upscale source media") : String())
-            : (account.isMisconfigured
+            : (CustomGenerationConfiguration.shared.route == .custom
+                ? CustomGenerationConfiguration.shared.configurationError ?? L10n.string("Generation is unavailable.")
+                : account.isMisconfigured
                 ? L10n.string("AI is unavailable")
                 : account.isSigningIn ? L10n.string("Opening Google") : L10n.string("Sign in to generate")))
     }

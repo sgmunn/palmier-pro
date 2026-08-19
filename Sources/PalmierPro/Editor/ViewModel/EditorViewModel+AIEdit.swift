@@ -2,7 +2,8 @@ import Foundation
 
 extension EditorViewModel {
     var aiEditAllowed: Bool {
-        AccountService.shared.isSignedIn && !AccountService.shared.isMisconfigured
+        if case .allowed = GenerationAccess.evaluate() { return true }
+        return false
     }
 
     func aiEditActions(clipId: String) -> [EditAction] {

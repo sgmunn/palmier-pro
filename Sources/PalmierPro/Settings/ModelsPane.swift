@@ -50,6 +50,7 @@ struct ModelsPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.lg) {
+            CustomGenerationSettings()
             searchBar
 
             if sections.isEmpty {
@@ -132,5 +133,57 @@ struct ModelsPane: View {
             }
         }
         .padding(.vertical, AppTheme.Spacing.smMd)
+    }
+}
+
+private struct CustomGenerationSettings: View {
+    @Bindable private var configuration = CustomGenerationConfiguration.shared
+    @State private var apiKey = ""
+    @FocusState private var keyFocused: Bool
+
+    var body: some View {
+        SettingsSection(title: L10n.string("Generation backend")) {
+            Picker(L10n.string("Backend"), selection: $configuration.route) {
+                Text(L10n.string("Palmier Hosted")).tag(GenerationRoute.hosted)
+                Text(L10n.string("Custom Gateway")).tag(GenerationRoute.custom)
+            }
+            .pickerStyle(.segmented)
+
+            if configuration.route == .custom {
+                TextField(L10n.string("Gateway URL"), text: $configuration.baseURLText)
+                    .textFieldStyle(.roundedBorder)
+                HStack(spacing: AppTheme.Spacing.sm) {
+                    SecureField(
+                        configuration.hasAPIKey ? L10n.string("API key saved") : L10n.string("API key"),
+                        text: $apiKey
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .focused($keyFocused)
+                    .onSubmit(saveKey)
+                    Button(L10n.string("Save"), action: saveKey)
+                        .buttonStyle(.capsule(.prominent, size: .regular))
+                        .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if configuration.hasAPIKey {
+                        Button(L10n.string("Remove")) {
+                            Task { await configuration.setAPIKey(nil) }
+                        }
+                        .buttonStyle(.capsule(.secondary, size: .regular))
+                    }
+                }
+                if let error = configuration.configurationError {
+                    Text(verbatim: error)
+                        .font(.system(size: AppTheme.FontSize.sm))
+                        .foregroundStyle(AppTheme.Text.tertiaryColor)
+                }
+            }
+        }
+    }
+
+    private func saveKey() {
+        let value = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        apiKey = ""
+        keyFocused = false
+        Task { await configuration.setAPIKey(value) }
     }
 }
