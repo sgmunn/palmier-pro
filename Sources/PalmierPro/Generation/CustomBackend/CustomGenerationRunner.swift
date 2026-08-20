@@ -13,7 +13,6 @@ struct CustomGenerationRunner: Sendable {
 
     func generateImages(
         configuration: CustomGenerationConfigurationSnapshot,
-        remoteModel: String,
         params: ImageGenerationParams
     ) async throws -> CustomGenerationResult {
         guard params.imageURLs.isEmpty else {
@@ -22,7 +21,7 @@ struct CustomGenerationRunner: Sendable {
         let response = try await client.generateImages(
             configuration: configuration,
             request: CustomImageGenerationRequest(
-                model: remoteModel,
+                model: configuration.modelID,
                 prompt: params.prompt,
                 n: params.numImages,
                 aspectRatio: params.aspectRatio,

@@ -192,8 +192,6 @@ struct CatalogEntry: Decodable, Sendable {
     let creditsPerSecondUpscale: Double?
     let upscalePricing: UpscalePricing?
     let paidOnly: Bool
-    let generationBackendID: String?
-    let remoteModel: String?
 
     enum Kind: String, Decodable, Sendable { case video, image, audio, upscale }
     enum ResponseShape: String, Decodable, Sendable {
@@ -239,7 +237,6 @@ struct CatalogEntry: Decodable, Sendable {
         case id, kind, displayName, providerIconKey, providerName, description, allowedEndpoints, responseShape, uiCapabilities
         case creditsPerSecond, audioDiscountRate, creditsPerImage, qualities
         case audioPricing, creditsPerSecondUpscale, upscalePricing, paidOnly
-        case generationBackendID, remoteModel
     }
 
     init(from decoder: Decoder) throws {
@@ -260,8 +257,6 @@ struct CatalogEntry: Decodable, Sendable {
         self.creditsPerSecondUpscale = try c.decodeIfPresent(Double.self, forKey: .creditsPerSecondUpscale)
         self.upscalePricing = try c.decodeIfPresent(UpscalePricing.self, forKey: .upscalePricing)
         self.paidOnly = try c.decodeIfPresent(Bool.self, forKey: .paidOnly) ?? false
-        self.generationBackendID = try c.decodeIfPresent(String.self, forKey: .generationBackendID)
-        self.remoteModel = try c.decodeIfPresent(String.self, forKey: .remoteModel)
         switch self.kind {
         case .video:
             self.uiCapabilities = .video(try c.decode(VideoCaps.self, forKey: .uiCapabilities))

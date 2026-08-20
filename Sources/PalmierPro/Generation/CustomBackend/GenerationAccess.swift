@@ -29,6 +29,9 @@ enum GenerationAccess {
             guard configuration.baseURL != nil else {
                 return .refused(reason: "Enter a valid gateway URL.")
             }
+            guard configuration.modelID != nil else {
+                return .refused(reason: "Enter a gateway model ID.")
+            }
             guard configuration.hasAPIKey else {
                 return .refused(reason: "Enter a gateway API key.")
             }

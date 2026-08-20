@@ -11,11 +11,7 @@ struct CustomGenerationClient: Sendable {
         configuration: CustomGenerationConfigurationSnapshot,
         request payload: CustomImageGenerationRequest
     ) async throws -> CustomImageGenerationResponse {
-        let endpoint = configuration.baseURL
-            .appendingPathComponent("v1", isDirectory: true)
-            .appendingPathComponent("images", isDirectory: true)
-            .appendingPathComponent("generations", isDirectory: false)
-        var request = URLRequest(url: endpoint)
+        var request = URLRequest(url: configuration.imageGenerationsURL)
         request.httpMethod = "POST"
         request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

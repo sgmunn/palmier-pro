@@ -362,6 +362,7 @@
 "Enhanced with FLUX.3 at 1080p." = "Enhanced with FLUX.3 at 1080p.";
 "Enter Full Screen" = "Enter Full Screen";
 "Enter a gateway API key." = "Enter a gateway API key.";
+"Enter a gateway model ID." = "Enter a gateway model ID.";
 "Enter a valid gateway URL." = "Enter a valid gateway URL.";
 "Estimated cost. Actual billing may differ slightly." = "Estimated cost. Actual billing may differ slightly.";
 "Exclusion" = "Exclusion";
@@ -611,6 +612,7 @@
 "Mixed" = "Mixed";
 "Mode" = "Mode";
 "Model" = "Model";
+"Model ID" = "Model ID";
 "Model no longer available" = "Model no longer available";
 "Models" = "Models";
 "Modified" = "Modified";

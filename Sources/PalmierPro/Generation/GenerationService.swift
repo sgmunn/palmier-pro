@@ -49,9 +49,6 @@ final class GenerationService {
         var routedInput = genInput
         let route = CustomGenerationConfiguration.shared.route
         routedInput.generationBackendID = route.rawValue
-        if route == .custom, case .image(let model) = ModelRegistry.byId[genInput.model] {
-            routedInput.remoteModel = model.entry.remoteModel
-        }
         let count = max(1, min(4, numImages))
         let baseName = name ?? String(routedInput.prompt.prefix(30))
 
@@ -89,6 +86,8 @@ final class GenerationService {
                     }
                     var finalInput = routedInput
                     if finalInput.createdAt == nil { finalInput.createdAt = Date() }
+                    let configuration = try await CustomGenerationConfiguration.shared.snapshot()
+                    finalInput.remoteModel = configuration.modelID
                     for (outputIndex, placeholder) in placeholders.enumerated() {
                         var storedInput = finalInput
                         storedInput.outputIndex = outputIndex
@@ -99,17 +98,12 @@ final class GenerationService {
                             "The custom gateway currently supports image generation only."
                         )
                     }
-                    guard let remoteModel = finalInput.remoteModel, !remoteModel.isEmpty else {
-                        throw CustomGenerationError.invalidConfiguration("The custom model mapping is missing.")
-                    }
-                    let configuration = try await CustomGenerationConfiguration.shared.snapshot()
                     for placeholder in placeholders {
                         updateGenerationMetadata(placeholder, editor: editor, status: .generating)
                     }
                     editor.onProjectCheckpointRequired?()
                     let result = try await CustomGenerationRunner().generateImages(
                         configuration: configuration,
-                        remoteModel: remoteModel,
                         params: imageParams
                     )
                     await self.finalizeCustomSuccess(

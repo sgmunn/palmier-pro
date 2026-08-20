@@ -4,6 +4,23 @@ import Testing
 
 @Suite("Custom generation")
 struct CustomGenerationTests {
+    @Test(
+        "Gateway base URL resolves the image endpoint",
+        arguments: [
+            ("https://api.together.ai", "https://api.together.ai/v1/images/generations"),
+            ("https://api.together.ai/v1", "https://api.together.ai/v1/images/generations"),
+        ]
+    )
+    func gatewayEndpoint(baseURL: String, expected: String) throws {
+        let configuration = CustomGenerationConfigurationSnapshot(
+            baseURL: try #require(URL(string: baseURL)),
+            apiKey: "test-key",
+            modelID: "black-forest-labs/FLUX.1-schnell"
+        )
+
+        #expect(configuration.imageGenerationsURL.absoluteString == expected)
+    }
+
     @Test("Image-only catalog replaces an unavailable video selection")
     func imageOnlyCatalogSelection() {
         #expect(GenerationView.normalizedGenerationType(
@@ -27,8 +44,6 @@ struct CustomGenerationTests {
 
         #expect(entries.count == 1)
         #expect(entry.id == "custom/image/default")
-        #expect(entry.generationBackendID == GenerationRoute.custom.rawValue)
-        #expect(entry.remoteModel == "default")
         guard case .image(let capabilities) = entry.uiCapabilities else {
             Issue.record("Expected image capabilities")
             return
@@ -40,7 +55,7 @@ struct CustomGenerationTests {
     @Test("Image request uses the stable gateway field names")
     func imageRequestEncoding() throws {
         let request = CustomImageGenerationRequest(
-            model: "flux-schnell",
+            model: "black-forest-labs/FLUX.1-schnell",
             prompt: "A quiet harbor",
             n: 2,
             aspectRatio: "16:9",
@@ -51,7 +66,7 @@ struct CustomGenerationTests {
             JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
         )
 
-        #expect(object["model"] as? String == "flux-schnell")
+        #expect(object["model"] as? String == "black-forest-labs/FLUX.1-schnell")
         #expect(object["prompt"] as? String == "A quiet harbor")
         #expect(object["n"] as? Int == 2)
         #expect(object["aspect_ratio"] as? String == "16:9")

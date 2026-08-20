@@ -152,6 +152,8 @@ private struct CustomGenerationSettings: View {
             if configuration.route == .custom {
                 TextField(L10n.string("Gateway URL"), text: $configuration.baseURLText)
                     .textFieldStyle(.roundedBorder)
+                TextField(L10n.string("Model ID"), text: $configuration.modelIDText)
+                    .textFieldStyle(.roundedBorder)
                 HStack(spacing: AppTheme.Spacing.sm) {
                     SecureField(
                         configuration.hasAPIKey ? L10n.string("API key saved") : L10n.string("API key"),

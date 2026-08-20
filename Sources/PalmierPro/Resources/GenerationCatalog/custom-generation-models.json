@@ -7,8 +7,6 @@
     "description": "Image generation through the configured gateway.",
     "allowedEndpoints": ["image"],
     "responseShape": "images",
-    "generationBackendID": "custom-gateway",
-    "remoteModel": "default",
     "uiCapabilities": {
       "resolutions": null,
       "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4"],
