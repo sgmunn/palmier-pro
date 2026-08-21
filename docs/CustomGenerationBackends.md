@@ -30,6 +30,42 @@ Start with image generation. Add video only after one image request works from b
 the generation panel and the Agent/MCP tool path. Add audio after video recovery is
 proven. This keeps every phase usable end to end.
 
+## Implementation status
+
+Status as of August 21, 2026 on `fork/custom-providers`:
+
+- Phase 1 text-to-image is implemented. The selected route, gateway URL, and remote
+  model ID are persisted in settings; the API key is stored in Keychain.
+- The custom route loads a bundled image-only catalog, bypasses Palmier account and
+  credit requirements, and remains available in a signed-out or unconfigured build.
+- `GenerationService` routes custom image requests through the gateway client and
+  reuses the existing placeholder, project-package commit, and media finalization
+  lifecycle.
+- The image contract sends `POST /v1/images/generations` and accepts URL or base64
+  results. A base URL ending in `/v1` is not given a duplicate version component.
+- `GenerationInput` persists `generationBackendID` and the resolved remote model ID,
+  so completed assets retain the execution identity rather than depending on current
+  settings.
+- Configuration errors and gateway failures reach visible generation failure state.
+
+Verified so far:
+
+- focused custom-generation tests pass for catalog loading, access, endpoint
+  resolution, request encoding, response decoding, and persisted routing metadata;
+- a mock gateway generated an asset that remained usable after saving and reopening
+  the project;
+- the user verified a real Together serverless request with
+  `black-forest-labs/FLUX.1-schnell` and the generated asset completed successfully;
+- the packaged app contains the custom catalog and passes signature verification.
+
+Still open from the broader Phase 1 design:
+
+- run `generate_image` through the MCP boundary against the real gateway and read the
+  resulting asset back independently;
+- reference-image generation remains deliberately unsupported;
+- cancellation, project close, Save As, and gateway failure behavior still need the
+  complete manual lifecycle matrix.
+
 ## Current structure
 
 The relevant flow is:
@@ -98,6 +134,7 @@ It owns:
 
 - selected route: hosted or custom gateway;
 - gateway base URL;
+- remote model ID for the current image-only slice;
 - API key reference, with the secret stored in Keychain;
 - connection state and a user-visible configuration error.
 
@@ -119,13 +156,13 @@ Generation/CustomBackend/CustomGenerationCatalog.swift
 Resources/GenerationCatalog/custom-generation-models.json
 ```
 
-The bundled catalog should decode to the existing `CatalogEntry` type so the model
-config and validation code remains unchanged. Each custom model has:
+The bundled catalog decodes to the existing `CatalogEntry` type so the model config
+and validation code remains unchanged. The current custom entry has:
 
-- a namespaced app ID such as `custom/image/flux`;
-- its remote gateway model name;
+- a stable app ID, currently `custom/image/default`;
 - image, video, audio, or upscale capabilities expressed in the existing schema;
-- a backend identifier of `custom-gateway` held in the custom catalog mapping.
+- a remote model ID supplied by settings and snapshotted into `GenerationInput` when
+  the request runs.
 
 Do not rely on a generic `/models` response for capabilities. A model list rarely
 describes duration buckets, reference limits, first/last-frame support, source media,
@@ -182,14 +219,16 @@ owns synchronous versus asynchronous job behavior, polling, cancellation, and
 provider error normalization. It runs outside the main actor and returns immutable,
 sendable values.
 
-A useful internal result shape is:
+A useful synchronous image result shape is:
 
 ```swift
 struct CustomGenerationResult: Sendable {
-    let jobID: String?
     let stagedFiles: [URL]
 }
 ```
+
+Phase 2 adds a separate accepted-job receipt rather than making the synchronous
+image result partially populated.
 
 The runner does not create `MediaAsset`s, mutate the editor, write the live project
 package, or implement timeline behavior. `GenerationService` remains authoritative
@@ -208,9 +247,7 @@ Video
 POST /v1/videos
 -> { id, status }
 GET /v1/videos/{id}
--> { id, status, progress?, error? }
-GET /v1/videos/{id}/content
--> video bytes
+-> { id, status, error?, outputs?: { video_url } }
 
 Audio
 POST /v1/audio/generations
@@ -322,27 +359,80 @@ The reference fork's own design notes are useful context:
 
 ## Delivery plan
 
-### Phase 1: image generation
+### Phase 1: text-to-image — implemented
 
-- Add custom configuration and Keychain storage.
-- Load a bundled image-only catalog when custom is selected.
-- Centralize access checks.
-- Implement text-to-image first, including URL and base64 responses.
-- Route reference-image edits only after the no-reference path passes end to end.
-- Verify both the panel and `generate_image` MCP tool independently read the finished
-  asset back from the media library.
+- [x] Add custom configuration, editable model ID, and Keychain storage.
+- [x] Load a bundled image-only catalog when custom is selected.
+- [x] Centralize access checks across the panel, tools, and related generation
+  surfaces.
+- [x] Implement text-to-image with URL and base64 responses.
+- [x] Verify signed-out panel generation with a mock gateway and Together.
+- [x] Verify project save, reopen, and use of a completed generated asset.
+- [ ] Verify `generate_image` through MCP and independently read the asset back.
+- [ ] Complete the manual cancellation, close, Save As, and failure matrix.
+
+Reference-image edits are deferred. They require shared local preprocessing and a
+defined upload/inline gateway contract; Phase 1 does not silently drop them.
 
 Acceptance: a fresh signed-out app can select the custom backend, generate an image,
 save the project, reopen it, and use the generated asset without Palmier credentials.
 
-### Phase 2: asynchronous video
+The panel path meets this acceptance criterion. MCP verification remains the entrance
+gate for Phase 2 implementation.
 
-- Add create, status, and content calls.
-- Persist backend ID, remote model mapping, and job ID immediately after acceptance.
-- Poll with bounded cadence and timeout, cooperative cancellation, and no main-actor
-  network or filesystem work.
-- Resume after app quit/reopen.
-- Reject every unsupported source/reference combination before creating placeholders.
+### Phase 2: asynchronous video — next
+
+Together's current [video generation API](https://docs.together.ai/docs/inference/videos/overview)
+fits the required lifecycle: create with `POST /v1/videos`, retrieve with
+`GET /v1/videos/{id}`, and download the completed `outputs.video_url`.
+Dedicated-endpoint management is not part of this phase.
+
+Implement Phase 2 in this order:
+
+1. **Close the image entrance gate.** Exercise `generate_image` through MCP against
+   the configured gateway, read the completed media asset back, and verify a gateway
+   refusal produces a terminal tool failure rather than a success-shaped receipt.
+2. **Add per-media remote model configuration.** Replace the single generic model
+   setting with explicit image and video model IDs. Snapshot the selected video model
+   into `GenerationInput.remoteModel`; changing settings later must not retarget an
+   accepted job.
+3. **Add one conservative video catalog entry.** Describe only the durations,
+   resolutions, aspect ratios, audio behavior, and input modes actually supported by
+   the first Together model. Start with text-to-video; do not expose image or video
+   references until their delivery contract is implemented.
+4. **Define accepted-job contracts.** Add create and retrieve request/response types
+   plus an immutable receipt containing backend ID, remote model ID, and job ID.
+   Normalize only `queued`, `in_progress`, `completed`, and `failed`; unknown states
+   fail explicitly.
+5. **Persist acceptance before polling.** Immediately write `generationBackendID`,
+   `remoteModel`, and `backendJobId` to every placeholder and checkpoint the project.
+   A crash after acceptance must leave enough state to resume the same remote job.
+6. **Poll outside the main actor.** Use a bounded cadence, honor cancellation, apply a
+   finite request timeout, and surface provider errors. A local timeout or missing
+   credentials must preserve the remote job ID for retry instead of submitting again.
+7. **Route startup recovery by persisted backend.** Hosted IDs continue through
+   Convex; custom IDs retrieve the stored remote job. Unknown backends fail visibly
+   and never fall through to hosted. Deduplicate concurrent resume attempts for the
+   same job.
+8. **Reuse exact finalization.** Download the completed video to a unique staged
+   location off the main actor, validate its HTTP response and media type, and install
+   it through `commitStagedProjectMedia`. Repeated terminal polling must not install a
+   second asset.
+9. **Add the first image-to-video mode only after recovery passes.** Reuse existing
+   image preprocessing, define how the prepared image reaches Together, and reject
+   end-frame or reference combinations the selected model cannot honor.
+
+Required automated coverage:
+
+- create and retrieve encoding/decoding, including every terminal state and malformed
+  or unknown responses;
+- acceptance metadata is checkpointed before the first poll;
+- cancellation before submit, while polling, and after completion before commit;
+- timeout and transient retrieval failure preserve the job for retry;
+- reopen resumes without duplicate submission or duplicate finalization;
+- changed route, credentials, or model settings cannot retarget a persisted job;
+- result download and package installation failures remain observable and retryable;
+- MCP discovery, text-to-video execution, read-back, failure, and reopen recovery.
 
 Acceptance: text-to-video and one supported image-to-video case complete; quitting
 after acceptance and reopening resumes the same job and installs exactly one result.
@@ -445,15 +535,21 @@ generation call path again: upstream changes to submission validation, reference
 preprocessing, finalization, persistence, or recovery can invalidate a conflict-free
 rebase semantically.
 
-## Decisions before implementation
+## Resolved decisions and next choice
 
-The first implementation needs only these choices:
+Phase 1 resolved the original decisions:
 
-1. the gateway base URL and authentication header;
-2. the exact image generation request/response contract;
-3. the first image model and its real capabilities;
-4. whether the custom route replaces hosted generation whenever selected;
-5. whether gateway settings are user-editable in the first slice or supplied through
-   build configuration for development.
+1. the gateway uses a user-editable base URL and bearer authentication;
+2. image generation uses the OpenAI-compatible `/v1/images/generations` shape;
+3. the first verified model is `black-forest-labs/FLUX.1-schnell`;
+4. custom selection exclusively replaces hosted generation and never falls back;
+5. URL, remote model ID, and API key are user-configurable, with the key in Keychain.
 
-Everything else can wait until the image slice works end to end.
+Before Phase 2 code begins, choose the first Together video model from the current
+[serverless catalog](https://docs.together.ai/docs/serverless/models) and record its
+exact text-to-video and image-to-video capability matrix in the bundled catalog.
+`minimax/video-01-director` is the lowest-risk text-to-video starting point because
+Together uses it in the official asynchronous polling example and lists a fixed
+720p/5-second tier. Image-to-video can follow with a model whose keyframe behavior is
+documented. This model choice is the only product decision needed; the lifecycle,
+persistence, recovery, and finalization architecture is defined above.
