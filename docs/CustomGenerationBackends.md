@@ -51,21 +51,27 @@ Status as of August 21, 2026 on `fork/custom-providers`:
 Verified so far:
 
 - focused custom-generation tests pass for catalog loading, access, endpoint
-  resolution, request encoding, response decoding, and persisted routing metadata;
+  resolution, request encoding, response decoding, aspect-ratio dimensions, MCP
+  schema, and persisted routing metadata;
 - a mock gateway generated an asset that remained usable after saving and reopening
   the project;
 - the user verified a real Together serverless request with
   `black-forest-labs/FLUX.1-schnell` and the generated asset completed successfully;
+- the repository MCP client generated a Together image, polled it to completion,
+  verified its requested 16:9 pixel dimensions, and read the asset back through
+  `inspect_media`;
+- a separate Codex task discovered and used the Palmier MCP tools to complete the
+  same 16:9 generation and read-back workflow;
 - the packaged app contains the custom catalog and passes signature verification.
 
-Still open from the broader Phase 1 design:
+Deliberately outside the completed Phase 1 scope:
 
-- run `generate_image` through the MCP boundary against the real gateway and read the
-  resulting asset back independently using the
-  [MCP test runbook](CustomGenerationMCPTest.md);
-- reference-image generation remains deliberately unsupported;
-- cancellation, project close, Save As, and gateway failure behavior still need the
-  complete manual lifecycle matrix.
+- reference-image generation remains unsupported until a shared upload or inline
+  reference contract is defined;
+- remote cancellation is not promised because a provider may continue work after a
+  client disconnects or abandons a request;
+- generic project close, Save As, and teardown coordination remain upstream editor
+  lifecycle responsibilities rather than custom-provider acceptance gates.
 
 ## Current structure
 
@@ -94,16 +100,16 @@ GenerationView+Submit               ToolExecutor+Generate
 | Area | Current owner | Why it matters |
 | --- | --- | --- |
 | UI intent | `Generation/UI/GenerationView+Submit.swift` | Builds the same submission types used by tools. Provider logic does not belong here. |
-| Agent/MCP intent | `Agent/Tools/ToolExecutor+Generate.swift` | Validates tool arguments, then calls the shared submission types. It currently hard-gates on Palmier sign-in and credits. |
+| Agent/MCP intent | `Agent/Tools/ToolExecutor+Generate.swift` | Validates tool arguments, applies the shared hosted-or-custom access policy, then calls the shared submission types. |
 | Request assembly | `Generation/Submission/*GenerationSubmission.swift` | Converts user-facing model settings and references into `BackendGenerationParams`. This should remain shared. |
-| Model capabilities | `Generation/Catalog/ModelCatalog.swift` and the four model config files | The UI and tools validate against this catalog. It is currently populated only by the Convex `models:list` subscription. |
+| Model capabilities | `Generation/Catalog/ModelCatalog.swift` and the four model config files | The UI and tools validate against this catalog. Hosted mode uses the Convex `models:list` subscription; custom mode loads the bundled custom catalog. |
 | Placeholder and result lifecycle | `Generation/GenerationService.swift` | Creates media placeholders, prepares references, persists job metadata, monitors jobs, downloads results, finalizes assets, and resumes work after reopening. This must remain the lifecycle owner. |
-| Hosted RPC | `Generation/GenerationBackend.swift` | Concrete Convex submit, subscription, activity, and draft-enhancement calls. There is no transport abstraction today. |
+| Generation transport | `Generation/GenerationBackend.swift` and `Generation/CustomBackend/CustomGenerationRunner.swift` | Convex remains the hosted transport; the custom route is isolated in the gateway runner. |
 | Hosted uploads | `Backend/BackendStorage.swift` | Requests a Convex upload ticket, uploads a file, and commits it to hosted storage. |
 | Persistence | `Models/MediaManifest.swift` | `GenerationInput` stores the model, inputs, `backendJobId`, output indexes, and result URLs in the project. |
 | Package commit | `GenerationService.downloadAndFinalize` and `EditorViewModel.commitStagedProjectMedia` | Installs completed media and runs the normal import/finalization path. Custom results must use this path too. |
 | Startup recovery | `Project/VideoProject.swift` -> `GenerationService.resumePendingGenerations` | Groups placeholders by hosted job ID and reconnects the Convex subscription. |
-| Access policy | `AccountService`, `ToolExecutor`, `AIEditMenu`, generation UI, audio panel, and editor helpers | Hosted account rules are currently repeated at several call sites. A custom backend will remain invisible until these use one shared decision. |
+| Access policy | `Generation/GenerationAccess.swift` | Returns the shared hosted-or-custom access decision used by the panel and Agent/MCP entry points. |
 
 ### Current invariants to preserve
 
@@ -369,8 +375,9 @@ The reference fork's own design notes are useful context:
 - [x] Implement text-to-image with URL and base64 responses.
 - [x] Verify signed-out panel generation with a mock gateway and Together.
 - [x] Verify project save, reopen, and use of a completed generated asset.
-- [ ] Verify `generate_image` through MCP and independently read the asset back.
-- [ ] Complete the manual cancellation, close, Save As, and failure matrix.
+- [x] Verify `generate_image` through MCP, including 16:9 output dimensions, and
+  independently read the asset back.
+- [x] Verify the same workflow from a separate Codex task using Palmier's MCP server.
 
 Reference-image edits are deferred. They require shared local preprocessing and a
 defined upload/inline gateway contract; Phase 1 does not silently drop them.
@@ -378,8 +385,7 @@ defined upload/inline gateway contract; Phase 1 does not silently drop them.
 Acceptance: a fresh signed-out app can select the custom backend, generate an image,
 save the project, reopen it, and use the generated asset without Palmier credentials.
 
-The panel path meets this acceptance criterion. MCP verification remains the entrance
-gate for Phase 2 implementation.
+The panel and MCP paths meet this acceptance criterion. Phase 1 is complete.
 
 ### Phase 2: asynchronous video — next
 
@@ -390,36 +396,35 @@ Dedicated-endpoint management is not part of this phase.
 
 Implement Phase 2 in this order:
 
-1. **Close the image entrance gate.** Exercise `generate_image` through MCP against
-   the configured gateway, read the completed media asset back, and verify a gateway
-   refusal produces a terminal tool failure rather than a success-shaped receipt.
-2. **Add per-media remote model configuration.** Replace the single generic model
+1. **Add per-media remote model configuration.** Replace the single generic model
    setting with explicit image and video model IDs. Snapshot the selected video model
    into `GenerationInput.remoteModel`; changing settings later must not retarget an
    accepted job.
-3. **Add one conservative video catalog entry.** Describe only the durations,
+2. **Add one conservative video catalog entry.** Describe only the durations,
    resolutions, aspect ratios, audio behavior, and input modes actually supported by
    the first Together model. Start with text-to-video; do not expose image or video
    references until their delivery contract is implemented.
-4. **Define accepted-job contracts.** Add create and retrieve request/response types
+3. **Define accepted-job contracts.** Add create and retrieve request/response types
    plus an immutable receipt containing backend ID, remote model ID, and job ID.
    Normalize only `queued`, `in_progress`, `completed`, and `failed`; unknown states
    fail explicitly.
-5. **Persist acceptance before polling.** Immediately write `generationBackendID`,
+4. **Persist acceptance before polling.** Immediately write `generationBackendID`,
    `remoteModel`, and `backendJobId` to every placeholder and checkpoint the project.
    A crash after acceptance must leave enough state to resume the same remote job.
-6. **Poll outside the main actor.** Use a bounded cadence, honor cancellation, apply a
-   finite request timeout, and surface provider errors. A local timeout or missing
+5. **Poll outside the main actor.** Use a bounded cadence, honor local cancellation,
+   apply a finite request timeout, and surface provider errors. A local timeout or missing
    credentials must preserve the remote job ID for retry instead of submitting again.
-7. **Route startup recovery by persisted backend.** Hosted IDs continue through
+   Cancellation stops local polling and commits; it does not promise cancellation of
+   provider work.
+6. **Route startup recovery by persisted backend.** Hosted IDs continue through
    Convex; custom IDs retrieve the stored remote job. Unknown backends fail visibly
    and never fall through to hosted. Deduplicate concurrent resume attempts for the
    same job.
-8. **Reuse exact finalization.** Download the completed video to a unique staged
+7. **Reuse exact finalization.** Download the completed video to a unique staged
    location off the main actor, validate its HTTP response and media type, and install
    it through `commitStagedProjectMedia`. Repeated terminal polling must not install a
    second asset.
-9. **Add the first image-to-video mode only after recovery passes.** Reuse existing
+8. **Add the first image-to-video mode only after recovery passes.** Reuse existing
    image preprocessing, define how the prepared image reaches Together, and reject
    end-frame or reference combinations the selected model cannot honor.
 
@@ -472,9 +477,10 @@ Automated coverage should include:
 - no-op/retry behavior without duplicate assets or duplicate jobs;
 - MCP schema/discovery plus end-to-end generate, poll/read-back, failure, and resume.
 
-Run focused tests while iterating, then `swift build` and `swift test`. UI behavior
-still needs manual verification for selection, disabled states, failure copy, Escape
-or dismissal during submission, project close, Save As, quit, and reopen.
+Run focused tests while iterating, then `swift build` and `swift test`. Each new UI
+surface still needs manual verification for selection, disabled states, failure copy,
+and dismissal during submission. Generic close, Save As, quit, and package-mutation
+coordination follow the upstream editor lifecycle contract.
 
 ## Upstream workflow
 

@@ -7,6 +7,9 @@ image back through `inspect_media`.
 The MCP client never reads the gateway API key. Palmier loads the key from Keychain
 and makes the Together request itself.
 
+This workflow was verified on August 21, 2026 with both the repository client and a
+separate Codex task. Both produced a 16:9 asset and read it back through MCP.
+
 ## Prerequisites
 
 1. Build and open the current Palmier Pro app.
