@@ -61,7 +61,8 @@ Verified so far:
 Still open from the broader Phase 1 design:
 
 - run `generate_image` through the MCP boundary against the real gateway and read the
-  resulting asset back independently;
+  resulting asset back independently using the
+  [MCP test runbook](CustomGenerationMCPTest.md);
 - reference-image generation remains deliberately unsupported;
 - cancellation, project close, Save As, and gateway failure behavior still need the
   complete manual lifecycle matrix.
