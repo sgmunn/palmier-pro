@@ -152,7 +152,7 @@ extension ToolExecutor {
             trimmedSourceOverride: trimmed,
             name: args.string("name"),
             folderId: sourceAsset.folderId,
-            generateAudio: true
+            generateAudio: model.supportsAudioGeneration
         ).submit(
             service: editor.generationService,
             projectURL: editor.projectURL,
@@ -227,7 +227,7 @@ extension ToolExecutor {
             placeholderDuration: Double(max(1, duration)),
             name: args.string("name"),
             folderId: folderId,
-            generateAudio: true
+            generateAudio: model.supportsAudioGeneration
         ).submit(
             service: editor.generationService,
             projectURL: editor.projectURL,

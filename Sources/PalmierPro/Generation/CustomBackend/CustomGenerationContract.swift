@@ -31,16 +31,109 @@ struct CustomImageGenerationResponse: Decodable, Sendable {
     let data: [Output]
 }
 
+struct CustomVideoGenerationRequest: Encodable, Sendable {
+    struct FrameImage: Encodable, Sendable {
+        let inputImage: String
+        let frame: Int
+
+        private enum CodingKeys: String, CodingKey {
+            case inputImage = "input_image"
+            case frame
+        }
+    }
+
+    let model: String
+    let prompt: String
+    let width: Int
+    let height: Int
+    let seconds: String
+    let generateAudio: Bool?
+    let frameImages: [FrameImage]?
+
+    private enum CodingKeys: String, CodingKey {
+        case model, prompt, width, height, seconds
+        case generateAudio = "generate_audio"
+        case frameImages = "frame_images"
+    }
+}
+
+enum CustomVideoJobStatus: Equatable, Sendable {
+    case queued
+    case inProgress
+    case completed(videoURL: URL)
+    case failed(message: String)
+}
+
+struct CustomVideoJobResponse: Decodable, Sendable {
+    struct Output: Decodable, Sendable {
+        let videoURL: URL?
+
+        private enum CodingKeys: String, CodingKey {
+            case videoURL = "video_url"
+        }
+    }
+
+    struct Failure: Decodable, Sendable {
+        let message: String?
+        let code: String?
+    }
+
+    let id: String
+    let model: String?
+    let rawStatus: String
+    let outputs: Output?
+    let error: Failure?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, model, outputs, error
+        case rawStatus = "status"
+    }
+
+    var status: CustomVideoJobStatus {
+        get throws {
+            switch rawStatus {
+            case "queued": return .queued
+            case "in_progress": return .inProgress
+            case "completed":
+                guard let url = outputs?.videoURL,
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+                    throw CustomGenerationError.invalidResponse(
+                        "Gateway completed the video job without a valid video URL."
+                    )
+                }
+                return .completed(videoURL: url)
+            case "failed":
+                return .failed(message: error?.message ?? "Video generation failed.")
+            default:
+                throw CustomGenerationError.invalidResponse(
+                    "Gateway returned unknown video status '" + rawStatus + "'."
+                )
+            }
+        }
+    }
+}
+
+struct CustomVideoJobReceipt: Equatable, Sendable {
+    let backendID: String
+    let remoteModelID: String
+    let jobID: String
+}
+
 enum CustomGenerationError: LocalizedError, Equatable {
     case invalidConfiguration(String)
     case unsupported(String)
     case invalidResponse(String)
     case gateway(status: Int, message: String)
+    case videoFailed(String)
+    case videoSubmissionTimedOut
 
     var errorDescription: String? {
         switch self {
-        case .invalidConfiguration(let message), .unsupported(let message), .invalidResponse(let message): message
+        case .invalidConfiguration(let message), .unsupported(let message), .invalidResponse(let message),
+             .videoFailed(let message): message
         case .gateway(let status, let message): "Gateway error (\(status)): \(message)"
+        case .videoSubmissionTimedOut:
+            "The gateway did not acknowledge the video request. Check Together before retrying to avoid a duplicate charge."
         }
     }
 }

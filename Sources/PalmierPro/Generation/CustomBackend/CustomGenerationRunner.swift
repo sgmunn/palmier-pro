@@ -6,9 +6,110 @@ struct CustomGenerationResult: Sendable {
 
 struct CustomGenerationRunner: Sendable {
     let client: CustomGenerationClient
+    let pollInterval: Duration
 
-    init(client: CustomGenerationClient = CustomGenerationClient()) {
+    init(
+        client: CustomGenerationClient = CustomGenerationClient(),
+        pollInterval: Duration = .seconds(10)
+    ) {
         self.client = client
+        self.pollInterval = pollInterval
+    }
+
+    func acceptVideo(
+        configuration: CustomGenerationConfigurationSnapshot,
+        params: VideoGenerationParams
+    ) async throws -> CustomVideoJobReceipt {
+        try Task.checkCancellation()
+        guard params.sourceVideoURL == nil,
+              params.endFrameURL == nil,
+              params.referenceImageURLs.isEmpty,
+              params.referenceVideoURLs.isEmpty,
+              params.referenceAudioURLs.isEmpty else {
+            throw CustomGenerationError.unsupported(
+                "The custom video model supports text and one starting frame only."
+            )
+        }
+        guard params.duration == 10 else {
+            throw CustomGenerationError.unsupported("The custom video model supports 10-second videos only.")
+        }
+        guard params.resolution == nil || params.resolution == "768p" else {
+            throw CustomGenerationError.unsupported("The custom video model supports 768p output only.")
+        }
+        guard params.aspectRatio == "16:9" else {
+            throw CustomGenerationError.unsupported("The custom video model supports 16:9 output only.")
+        }
+        guard !params.generateAudio else {
+            throw CustomGenerationError.unsupported("The custom video model does not generate audio.")
+        }
+
+        let frameImages: [CustomVideoGenerationRequest.FrameImage]?
+        if let startFrameURL = params.startFrameURL {
+            let base64 = try await Self.base64Image(at: startFrameURL)
+            frameImages = [
+                .init(inputImage: base64, frame: 0),
+            ]
+        } else {
+            frameImages = nil
+        }
+        let response = try await client.createVideo(
+            configuration: configuration,
+            request: CustomVideoGenerationRequest(
+                model: configuration.modelID,
+                prompt: params.prompt,
+                width: 1366,
+                height: 768,
+                seconds: "10",
+                generateAudio: nil,
+                frameImages: frameImages
+            )
+        )
+        let returnedModel = response.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let acceptedModel = returnedModel.flatMap { $0.isEmpty ? nil : $0 }
+        return CustomVideoJobReceipt(
+            backendID: GenerationRoute.custom.rawValue,
+            remoteModelID: acceptedModel ?? configuration.modelID,
+            jobID: response.id
+        )
+    }
+
+    func waitForVideo(
+        connection: CustomGenerationConnectionSnapshot,
+        receipt: CustomVideoJobReceipt
+    ) async throws -> URL {
+        while true {
+            try Task.checkCancellation()
+            let response = try await client.retrieveVideo(connection: connection, jobID: receipt.jobID)
+            switch try response.status {
+            case .queued, .inProgress:
+                try await ContinuousClock().sleep(for: pollInterval)
+            case .completed(let videoURL):
+                return videoURL
+            case .failed(let message):
+                throw CustomGenerationError.videoFailed(message)
+            }
+        }
+    }
+
+    func stageVideo(from remoteURL: URL) async throws -> URL {
+        try Task.checkCancellation()
+        var request = URLRequest(url: remoteURL)
+        request.timeoutInterval = client.downloadTimeout
+        let (downloaded, response) = try await client.session.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw CustomGenerationError.invalidResponse("Gateway video download failed.")
+        }
+        let staged = try await Self.stageDownloadedVideo(
+            downloaded,
+            mimeType: http.mimeType
+        )
+        do {
+            try Task.checkCancellation()
+            return staged
+        } catch {
+            await Self.remove([staged])
+            throw error
+        }
     }
 
     func generateImages(
@@ -81,6 +182,19 @@ struct CustomGenerationRunner: Sendable {
         }
     }
 
+    private static func base64Image(at value: String) async throws -> String {
+        guard let url = URL(string: value), url.isFileURL else {
+            throw CustomGenerationError.unsupported("The starting frame must be a prepared local image.")
+        }
+        return try await Task.detached(priority: .userInitiated) {
+            let data = try Data(contentsOf: url)
+            guard imageExtension(data.prefix(12)) != nil else {
+                throw CustomGenerationError.unsupported("The starting frame is not a supported image.")
+            }
+            return data.base64EncodedString()
+        }.value
+    }
+
     private static func stage(_ data: Data) async throws -> URL {
         guard let fileExtension = imageExtension(data.prefix(12)) else {
             throw CustomGenerationError.invalidResponse("Gateway returned invalid base64 image data.")
@@ -126,6 +240,45 @@ struct CustomGenerationRunner: Sendable {
             }
             guard let fileExtension else {
                 throw CustomGenerationError.invalidResponse("Gateway download is not a supported image.")
+            }
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("palmier-custom-generation-\(UUID().uuidString)", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let destination = directory.appendingPathComponent("result.\(fileExtension)")
+                try FileManager.default.moveItem(at: source, to: destination)
+                return destination
+            } catch {
+                try? FileManager.default.removeItem(at: directory)
+                throw error
+            }
+        }.value
+    }
+
+    private static func stageDownloadedVideo(
+        _ source: URL,
+        mimeType: String?
+    ) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            let handle = try FileHandle(forReadingFrom: source)
+            defer { try? handle.close() }
+            let header = try handle.read(upToCount: 16) ?? Data()
+            let fileExtension: String?
+            switch mimeType?.lowercased() {
+            case "video/mp4": fileExtension = "mp4"
+            case "video/quicktime": fileExtension = "mov"
+            case "video/webm": fileExtension = "webm"
+            default:
+                if header.count >= 8, header.dropFirst(4).prefix(4) == Data("ftyp".utf8) {
+                    fileExtension = "mp4"
+                } else if header.starts(with: [0x1A, 0x45, 0xDF, 0xA3]) {
+                    fileExtension = "webm"
+                } else {
+                    fileExtension = nil
+                }
+            }
+            guard let fileExtension else {
+                throw CustomGenerationError.invalidResponse("Gateway download is not a supported video.")
             }
             let directory = FileManager.default.temporaryDirectory
                 .appendingPathComponent("palmier-custom-generation-\(UUID().uuidString)", isDirectory: true)

@@ -362,8 +362,9 @@
 "Enhanced with FLUX.3 at 1080p." = "Enhanced with FLUX.3 at 1080p.";
 "Enter Full Screen" = "Enter Full Screen";
 "Enter a gateway API key." = "Enter a gateway API key.";
-"Enter a gateway model ID." = "Enter a gateway model ID.";
 "Enter a valid gateway URL." = "Enter a valid gateway URL.";
+"Enter a video model ID." = "Enter a video model ID.";
+"Enter an image model ID." = "Enter an image model ID.";
 "Estimated cost. Actual billing may differ slightly." = "Estimated cost. Actual billing may differ slightly.";
 "Exclusion" = "Exclusion";
 "Expand" = "Expand";
@@ -486,6 +487,7 @@
 "Ignores speech-free pauses shorter than this." = "Ignores speech-free pauses shorter than this.";
 "Image" = "Image";
 "Image Adjustment" = "Image Adjustment";
+"Image Model ID" = "Image Model ID";
 "Image Ref" = "Image Ref";
 "Import" = "Import";
 "Import Media" = "Import Media";
@@ -612,7 +614,6 @@
 "Mixed" = "Mixed";
 "Mode" = "Mode";
 "Model" = "Model";
-"Model ID" = "Model ID";
 "Model no longer available" = "Model no longer available";
 "Models" = "Models";
 "Modified" = "Modified";
@@ -1074,6 +1075,7 @@
 "Vertical workspace layout" = "Vertical workspace layout";
 "Vibrance" = "Vibrance";
 "Video" = "Video";
+"Video Model ID" = "Video Model ID";
 "Video Ref" = "Video Ref";
 "Video automation" = "Video automation";
 "Video editor" = "Video editor";

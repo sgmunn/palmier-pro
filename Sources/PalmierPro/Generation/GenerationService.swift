@@ -18,11 +18,17 @@ final class FirstOnlyFlag {
 final class GenerationService {
 
     private static let uploadCacheTTL: TimeInterval = 6 * 24 * 60 * 60
-    private var resumedBackendJobIds: Set<String> = []
+    private var activeBackendJobs: Set<String> = []
+    private var generationTasks: [String: Task<Void, Never>] = [:]
 
     private struct PreparedReferences {
-        let uploaded: [String]
+        let delivered: [String]
         let tempFiles: [URL]
+    }
+
+    private enum ReferenceDelivery {
+        case hosted
+        case local
     }
 
     @discardableResult
@@ -76,43 +82,81 @@ final class GenerationService {
         let primaryId = placeholders[0].id
         captureSubmission(genInput: routedInput, assetType: assetType, outputCount: count, editor: editor)
 
-        Task { @MainActor in
+        let generationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.generationTasks[primaryId] = nil }
             do {
                 if route == .custom {
-                    guard references.isEmpty, trimmedSourceOverride == nil, preUploadedURLs?.isEmpty != false else {
-                        throw CustomGenerationError.unsupported(
-                            "Reference-image generation is not supported by the custom gateway yet."
-                        )
-                    }
                     var finalInput = routedInput
                     if finalInput.createdAt == nil { finalInput.createdAt = Date() }
-                    let configuration = try await CustomGenerationConfiguration.shared.snapshot()
-                    finalInput.remoteModel = configuration.modelID
-                    for (outputIndex, placeholder) in placeholders.enumerated() {
-                        var storedInput = finalInput
-                        storedInput.outputIndex = outputIndex
-                        updateGenerationMetadata(placeholder, editor: editor) { $0 = storedInput }
-                    }
-                    guard case .image(let imageParams) = buildParams([]) else {
-                        throw CustomGenerationError.unsupported(
-                            "The custom gateway currently supports image generation only."
-                        )
-                    }
                     for placeholder in placeholders {
                         updateGenerationMetadata(placeholder, editor: editor, status: .generating)
                     }
-                    editor.onProjectCheckpointRequired?()
-                    let result = try await CustomGenerationRunner().generateImages(
-                        configuration: configuration,
-                        params: imageParams
-                    )
-                    await self.finalizeCustomSuccess(
-                        stagedFiles: result.stagedFiles,
-                        placeholders: placeholders,
-                        editor: editor,
-                        onComplete: onComplete,
-                        onFailure: onFailure
-                    )
+                    switch assetType {
+                    case .image:
+                        guard references.isEmpty, trimmedSourceOverride == nil,
+                              preUploadedURLs?.isEmpty != false,
+                              case .image(let imageParams) = buildParams([]) else {
+                            throw CustomGenerationError.unsupported(
+                                "Reference-image generation is not supported by the custom gateway yet."
+                            )
+                        }
+                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(for: .image)
+                        finalInput.remoteModel = configuration.modelID
+                        persistCustomInput(finalInput, placeholders: placeholders, editor: editor)
+                        editor.onProjectCheckpointRequired?()
+                        let result = try await CustomGenerationRunner().generateImages(
+                            configuration: configuration,
+                            params: imageParams
+                        )
+                        await self.finalizeCustomSuccess(
+                            stagedFiles: result.stagedFiles,
+                            placeholders: placeholders,
+                            editor: editor,
+                            onComplete: onComplete,
+                            onFailure: onFailure
+                        )
+                    case .video:
+                        let prepared = try await self.prepareReferences(
+                            references: references,
+                            trimmedSourceOverride: trimmedSourceOverride,
+                            preUploadedURLs: preUploadedURLs,
+                            preprocessRef: preprocessRef,
+                            preprocessSourceVideo: preprocessSourceVideo,
+                            delivery: .local
+                        )
+                        defer { Self.cleanupTempFiles(prepared.tempFiles) }
+                        guard case .video(let videoParams) = buildParams(prepared.delivered) else {
+                            throw CustomGenerationError.unsupported("Invalid custom video request.")
+                        }
+                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(for: .video)
+                        let runner = CustomGenerationRunner()
+                        let receipt = try await runner.acceptVideo(
+                            configuration: configuration,
+                            params: videoParams
+                        )
+                        finalInput.generationBackendID = receipt.backendID
+                        finalInput.remoteModel = receipt.remoteModelID
+                        finalInput.backendJobId = receipt.jobID
+                        persistCustomInput(finalInput, placeholders: placeholders, editor: editor)
+                        editor.onProjectCheckpointRequired?()
+                        let jobKey = Self.jobKey(backendID: receipt.backendID, jobID: receipt.jobID)
+                        activeBackendJobs.insert(jobKey)
+                        defer { activeBackendJobs.remove(jobKey) }
+                        await monitorCustomVideo(
+                            receipt: receipt,
+                            connection: configuration.connection,
+                            runner: runner,
+                            placeholders: placeholders,
+                            editor: editor,
+                            onComplete: onComplete,
+                            onFailure: onFailure
+                        )
+                    default:
+                        throw CustomGenerationError.unsupported(
+                            "The custom gateway does not support this media type yet."
+                        )
+                    }
                     return
                 }
                 let prepared = try await self.prepareReferences(
@@ -120,10 +164,11 @@ final class GenerationService {
                     trimmedSourceOverride: trimmedSourceOverride,
                     preUploadedURLs: preUploadedURLs,
                     preprocessRef: preprocessRef,
-                    preprocessSourceVideo: preprocessSourceVideo
+                    preprocessSourceVideo: preprocessSourceVideo,
+                    delivery: .hosted
                 )
                 defer { Self.cleanupTempFiles(prepared.tempFiles) }
-                let uploaded = prepared.uploaded
+                let uploaded = prepared.delivered
 
                 var finalGenInput = routedInput
                 if let snapshotRefs {
@@ -162,14 +207,21 @@ final class GenerationService {
                 let message = error.localizedDescription
                 Log.generation.error("generation setup failed model=\(routedInput.model) error=\(message)")
                 let statusMessage = route == .hosted ? "Upload failed: \(message)" : message
-                for placeholder in placeholders {
+                for placeholder in placeholders where editor.mediaAssets.contains(where: { $0 === placeholder }) {
                     updateGenerationMetadata(placeholder, editor: editor, status: .failed(statusMessage))
                 }
                 onFailure?()
             }
         }
+        generationTasks[primaryId] = generationTask
 
         return primaryId
+    }
+
+    func cancelGeneration(assetIDs: Set<String>) {
+        for id in assetIDs {
+            generationTasks[id]?.cancel()
+        }
     }
 
     private func captureSubmission(
@@ -195,10 +247,14 @@ final class GenerationService {
         trimmedSourceOverride: TrimmedSource?,
         preUploadedURLs: [String]?,
         preprocessRef: (@Sendable (Int, MediaAsset, URL) async throws -> URL?)?,
-        preprocessSourceVideo: (@Sendable (URL) async throws -> URL?)?
+        preprocessSourceVideo: (@Sendable (URL) async throws -> URL?)?,
+        delivery: ReferenceDelivery
     ) async throws -> PreparedReferences {
         if let preUploadedURLs, !preUploadedURLs.isEmpty {
-            return PreparedReferences(uploaded: preUploadedURLs, tempFiles: [])
+            guard case .hosted = delivery else {
+                throw CustomGenerationError.unsupported("Custom generation requires local reference media.")
+            }
+            return PreparedReferences(delivered: preUploadedURLs, tempFiles: [])
         }
 
         var tempFiles: [URL] = []
@@ -231,16 +287,32 @@ final class GenerationService {
                     tempFiles.append(rewritten)
                 }
             }
-            let uploaded = try await uploadReferences(
-                at: urlsToUpload,
-                types: refTypes,
-                cacheKeys: uploadCacheKeys(
-                    references: references,
-                    trimmedIndex: trimmedIndex,
-                    hasPreprocess: preprocessRef != nil || preprocessSourceVideo != nil
-                ),
-            )
-            return PreparedReferences(uploaded: uploaded, tempFiles: tempFiles)
+            if case .local = delivery {
+                for index in urlsToUpload.indices
+                    where refTypes.indices.contains(index)
+                        && refTypes[index] == .image
+                        && ImageConverter.requiresConversion(urlsToUpload[index]) {
+                    let converted = try await ImageConverter.convertToJPEG(urlsToUpload[index])
+                    urlsToUpload[index] = converted
+                    tempFiles.append(converted)
+                }
+            }
+            let delivered: [String]
+            switch delivery {
+            case .hosted:
+                delivered = try await uploadReferences(
+                    at: urlsToUpload,
+                    types: refTypes,
+                    cacheKeys: uploadCacheKeys(
+                        references: references,
+                        trimmedIndex: trimmedIndex,
+                        hasPreprocess: preprocessRef != nil || preprocessSourceVideo != nil
+                    ),
+                )
+            case .local:
+                delivered = urlsToUpload.map(\.absoluteString)
+            }
+            return PreparedReferences(delivered: delivered, tempFiles: tempFiles)
         } catch {
             Self.cleanupTempFiles(tempFiles)
             throw error
@@ -276,8 +348,11 @@ final class GenerationService {
     }
 
     private static func cleanupTempFiles(_ urls: [URL]) {
-        for url in urls {
-            try? FileManager.default.removeItem(at: url)
+        guard !urls.isEmpty else { return }
+        Task.detached {
+            for url in urls {
+                try? FileManager.default.removeItem(at: url)
+            }
         }
     }
 
@@ -410,25 +485,83 @@ final class GenerationService {
         let pending = editor.mediaAssets.filter(\.isRecoveringGeneration)
 
         let byBackendJob = Dictionary(grouping: pending.compactMap { asset -> (String, MediaAsset)? in
-            guard let backendJobId = asset.generationInput?.backendJobId, !backendJobId.isEmpty else { return nil }
-            return (backendJobId, asset)
+            guard let input = asset.generationInput,
+                  let backendJobId = input.backendJobId, !backendJobId.isEmpty,
+                  let backendID = input.generationBackendID else { return nil }
+            return (Self.jobKey(backendID: backendID, jobID: backendJobId), asset)
         }, by: { $0.0 })
 
-        for (backendJobId, group) in byBackendJob where !resumedBackendJobIds.contains(backendJobId) {
+        for (jobKey, group) in byBackendJob where !activeBackendJobs.contains(jobKey) {
             let placeholders = sorted(group.map { $0.1 })
-            resumedBackendJobIds.insert(backendJobId)
+            guard let input = placeholders.first?.generationInput,
+                  let backendJobId = input.backendJobId,
+                  let backendID = input.generationBackendID else { continue }
+            activeBackendJobs.insert(jobKey)
             Task { @MainActor [weak self, weak editor] in
-                guard let self, let editor else { return }
-                await self.monitorBackendJob(
-                    backendJobId: backendJobId,
-                    placeholders: placeholders,
-                    editor: editor,
-                    onComplete: nil,
-                    onFailure: nil
-                )
-                self.resumedBackendJobIds.remove(backendJobId)
+                guard let self else { return }
+                defer { self.activeBackendJobs.remove(jobKey) }
+                guard let editor else { return }
+                switch GenerationRoute(rawValue: backendID) {
+                case .hosted:
+                    await self.monitorBackendJob(
+                        backendJobId: backendJobId,
+                        placeholders: placeholders,
+                        editor: editor,
+                        onComplete: nil,
+                        onFailure: nil
+                    )
+                case .custom:
+                    guard let remoteModel = input.remoteModel, !remoteModel.isEmpty else {
+                        self.failRecovery(
+                            placeholders,
+                            message: "The stored custom video model is missing.",
+                            editor: editor
+                        )
+                        return
+                    }
+                    do {
+                        let connection = try await CustomGenerationConfiguration.shared.recoverySnapshot()
+                        let receipt = CustomVideoJobReceipt(
+                            backendID: backendID,
+                            remoteModelID: remoteModel,
+                            jobID: backendJobId
+                        )
+                        await self.monitorCustomVideo(
+                            receipt: receipt,
+                            connection: connection,
+                            runner: CustomGenerationRunner(),
+                            placeholders: placeholders,
+                            editor: editor,
+                            onComplete: nil,
+                            onFailure: nil
+                        )
+                    } catch {
+                        self.failRecovery(placeholders, message: error.localizedDescription, editor: editor)
+                    }
+                case nil:
+                    self.failRecovery(
+                        placeholders,
+                        message: "Unknown generation backend '\(backendID)'.",
+                        editor: editor
+                    )
+                }
             }
         }
+    }
+
+    private static func jobKey(backendID: String, jobID: String) -> String {
+        "\(backendID):\(jobID)"
+    }
+
+    private func failRecovery(
+        _ placeholders: [MediaAsset],
+        message: String,
+        editor: EditorViewModel
+    ) {
+        for placeholder in placeholders {
+            updateGenerationMetadata(placeholder, editor: editor, status: .failed(message))
+        }
+        editor.onProjectCheckpointRequired?()
     }
 
     private func backendError(_ error: Error) -> (code: String?, message: String) {
@@ -440,6 +573,64 @@ final class GenerationService {
             return (payload.code, message)
         }
         return (nil, error.localizedDescription)
+    }
+
+    private func persistCustomInput(
+        _ input: GenerationInput,
+        placeholders: [MediaAsset],
+        editor: EditorViewModel
+    ) {
+        for (outputIndex, placeholder) in placeholders.enumerated() {
+            var storedInput = input
+            storedInput.outputIndex = outputIndex
+            updateGenerationMetadata(placeholder, editor: editor, status: .generating) { $0 = storedInput }
+        }
+    }
+
+    private func monitorCustomVideo(
+        receipt: CustomVideoJobReceipt,
+        connection: CustomGenerationConnectionSnapshot,
+        runner: CustomGenerationRunner,
+        placeholders: [MediaAsset],
+        editor: EditorViewModel,
+        onComplete: (@MainActor (MediaAsset) -> Void)?,
+        onFailure: (@MainActor () -> Void)?
+    ) async {
+        do {
+            let remoteURL = try await runner.waitForVideo(connection: connection, receipt: receipt)
+            try Task.checkCancellation()
+            let resultURLs = [remoteURL.absoluteString]
+            for placeholder in placeholders {
+                updateGenerationMetadata(placeholder, editor: editor, status: .downloading) { input in
+                    input.resultURLs = resultURLs
+                }
+            }
+            editor.onProjectCheckpointRequired?()
+            let staged = try await runner.stageVideo(from: remoteURL)
+            do {
+                try Task.checkCancellation()
+                await finalizeCustomSuccess(
+                    stagedFiles: [staged],
+                    placeholders: placeholders,
+                    editor: editor,
+                    onComplete: onComplete,
+                    onFailure: onFailure
+                )
+            } catch {
+                await CustomGenerationRunner.remove([staged])
+                throw error
+            }
+        } catch {
+            let message = error is CancellationError ? "Video generation polling cancelled." : error.localizedDescription
+            Log.generation.error("custom video job \(receipt.jobID) stopped error=\(message)")
+            for placeholder in placeholders
+                where placeholder.generationStatus != .none
+                    && editor.mediaAssets.contains(where: { $0 === placeholder }) {
+                updateGenerationMetadata(placeholder, editor: editor, status: .failed(message))
+            }
+            editor.onProjectCheckpointRequired?()
+            onFailure?()
+        }
     }
 
     private func updateGenerationMetadata(
@@ -789,7 +980,7 @@ final class GenerationService {
     ) async {
         guard !stagedFiles.isEmpty else {
             for placeholder in placeholders {
-                updateGenerationMetadata(placeholder, editor: editor, status: .failed("Gateway returned no images."))
+                updateGenerationMetadata(placeholder, editor: editor, status: .failed("Gateway returned no media."))
             }
             onFailure?()
             return
@@ -798,7 +989,7 @@ final class GenerationService {
         for (index, placeholder) in placeholders.enumerated() {
             let outputIndex = placeholder.generationInput?.outputIndex ?? index
             guard stagedFiles.indices.contains(outputIndex) else {
-                updateGenerationMetadata(placeholder, editor: editor, status: .failed("No image for placeholder."))
+                updateGenerationMetadata(placeholder, editor: editor, status: .failed("No result for placeholder."))
                 continue
             }
             let stagedURL = stagedFiles[outputIndex]

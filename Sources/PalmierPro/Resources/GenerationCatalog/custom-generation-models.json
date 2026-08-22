@@ -15,5 +15,42 @@
       "maxImages": 4
     },
     "paidOnly": false
+  },
+  {
+    "id": "custom/video/default",
+    "kind": "video",
+    "displayName": "Custom Gateway Video",
+    "providerName": "Custom Gateway",
+    "description": "10-second 768p video generation through the configured gateway.",
+    "allowedEndpoints": ["video"],
+    "responseShape": "video",
+    "uiCapabilities": {
+      "supportsPrompt": true,
+      "supportsAudioGeneration": false,
+      "durations": [10],
+      "resolutions": ["768p"],
+      "aspectRatios": ["16:9"],
+      "supportsFirstFrame": true,
+      "supportsLastFrame": false,
+      "maxReferenceImages": 0,
+      "maxReferenceVideos": 0,
+      "maxReferenceAudios": 0,
+      "maxTotalReferences": 0,
+      "maxCombinedVideoRefSeconds": null,
+      "maxCombinedAudioRefSeconds": null,
+      "framesAndReferencesExclusive": true,
+      "referenceTagNoun": "reference",
+      "requiresSourceVideo": false,
+      "maxSourceVideoSeconds": null,
+      "maxSourceVideoResolution": null,
+      "requiredSourceVideoEncoding": null,
+      "requiresReferenceImage": false,
+      "requiresReferenceAudio": false,
+      "draftCreditsPerSecond": null,
+      "draftEnhanceCreditsPerSecond": null,
+      "sourceVideoCreditsPerSecond": null,
+      "sourceVideoDraftCreditsPerSecond": null
+    },
+    "paidOnly": false
   }
 ]

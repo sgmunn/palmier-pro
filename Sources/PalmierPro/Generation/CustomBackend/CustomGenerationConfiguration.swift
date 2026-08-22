@@ -12,7 +12,8 @@ final class CustomGenerationConfiguration {
 
     private static let routeKey = "generationRoute"
     private static let baseURLKey = "customGenerationBaseURL"
-    private static let modelIDKey = "customGenerationModelID"
+    private static let imageModelIDKey = "customGenerationImageModelID"
+    private static let videoModelIDKey = "customGenerationVideoModelID"
     nonisolated private static let apiKeyAccount = "custom-generation-gateway"
 
     private let defaults: UserDefaults
@@ -28,8 +29,12 @@ final class CustomGenerationConfiguration {
         didSet { defaults.set(baseURLText, forKey: Self.baseURLKey) }
     }
 
-    var modelIDText: String {
-        didSet { defaults.set(modelIDText, forKey: Self.modelIDKey) }
+    var imageModelIDText: String {
+        didSet { defaults.set(imageModelIDText, forKey: Self.imageModelIDKey) }
+    }
+
+    var videoModelIDText: String {
+        didSet { defaults.set(videoModelIDText, forKey: Self.videoModelIDKey) }
     }
 
     private(set) var hasAPIKey = false
@@ -43,15 +48,21 @@ final class CustomGenerationConfiguration {
         return url
     }
 
-    var modelID: String? {
-        let value = modelIDText.trimmingCharacters(in: .whitespacesAndNewlines)
+    var imageModelID: String? {
+        let value = imageModelIDText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var videoModelID: String? {
+        let value = videoModelIDText.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 
     var configurationError: String? {
         guard route == .custom else { return nil }
         guard baseURL != nil else { return L10n.string("Enter a valid gateway URL.") }
-        guard modelID != nil else { return L10n.string("Enter a gateway model ID.") }
+        guard imageModelID != nil else { return L10n.string("Enter an image model ID.") }
+        guard videoModelID != nil else { return L10n.string("Enter a video model ID.") }
         guard hasAPIKey else { return L10n.string("Enter a gateway API key.") }
         return nil
     }
@@ -60,7 +71,10 @@ final class CustomGenerationConfiguration {
         self.defaults = defaults
         route = GenerationRoute(rawValue: defaults.string(forKey: Self.routeKey) ?? "") ?? .hosted
         baseURLText = defaults.string(forKey: Self.baseURLKey) ?? ""
-        modelIDText = defaults.string(forKey: Self.modelIDKey) ?? ""
+        imageModelIDText = defaults.string(forKey: Self.imageModelIDKey)
+            ?? "black-forest-labs/FLUX.1-schnell"
+        videoModelIDText = defaults.string(forKey: Self.videoModelIDKey)
+            ?? "minimax/hailuo-02"
         Task { [weak self] in
             let hasKey = await Self.loadAPIKey() != nil
             self?.hasAPIKey = hasKey
@@ -83,27 +97,77 @@ final class CustomGenerationConfiguration {
         await Task.detached { KeychainStore.load(account: apiKeyAccount) }.value
     }
 
-    func snapshot() async throws -> CustomGenerationConfigurationSnapshot {
+    func snapshot(for kind: CatalogEntry.Kind) async throws -> CustomGenerationConfigurationSnapshot {
         guard let apiKey = await Self.loadAPIKey() else {
             throw CustomGenerationError.invalidConfiguration("Enter a gateway API key.")
         }
         guard let baseURL else { throw CustomGenerationError.invalidConfiguration("Enter a valid gateway URL.") }
-        guard let modelID else { throw CustomGenerationError.invalidConfiguration("Enter a gateway model ID.") }
+        let modelID: String? = switch kind {
+        case .image: imageModelID
+        case .video: videoModelID
+        case .audio, .upscale: nil
+        }
+        guard let modelID else {
+            throw CustomGenerationError.invalidConfiguration("Enter a " + kind.rawValue + " model ID.")
+        }
         return CustomGenerationConfigurationSnapshot(baseURL: baseURL, apiKey: apiKey, modelID: modelID)
+    }
+
+    func recoverySnapshot() async throws -> CustomGenerationConnectionSnapshot {
+        guard let apiKey = await Self.loadAPIKey() else {
+            throw CustomGenerationError.invalidConfiguration("Enter a gateway API key.")
+        }
+        guard let baseURL else { throw CustomGenerationError.invalidConfiguration("Enter a valid gateway URL.") }
+        return CustomGenerationConnectionSnapshot(baseURL: baseURL, apiKey: apiKey)
+    }
+
+    func remoteModelID(for catalogModelID: String) -> String? {
+        switch catalogModelID {
+        case CustomGenerationCatalog.imageModelID: imageModelID
+        case CustomGenerationCatalog.videoModelID: videoModelID
+        default: nil
+        }
+    }
+}
+
+struct CustomGenerationConnectionSnapshot: Sendable {
+    let baseURL: URL
+    let apiKey: String
+
+    var imageGenerationsURL: URL {
+        endpoint(version: "v1", components: ["images", "generations"])
+    }
+
+    var videosURL: URL {
+        endpoint(version: "v2", components: ["videos"])
+    }
+
+    func videoURL(jobID: String) -> URL {
+        videosURL.appendingPathComponent(jobID, isDirectory: false)
+    }
+
+    private func endpoint(version: String, components: [String]) -> URL {
+        var root = baseURL
+        if ["v1", "v2"].contains(root.lastPathComponent.lowercased()) {
+            root.deleteLastPathComponent()
+        }
+        return components.reduce(root.appendingPathComponent(version, isDirectory: true)) {
+            $0.appendingPathComponent($1, isDirectory: false)
+        }
     }
 }
 
 struct CustomGenerationConfigurationSnapshot: Sendable {
-    let baseURL: URL
-    let apiKey: String
+    let connection: CustomGenerationConnectionSnapshot
     let modelID: String
 
-    var imageGenerationsURL: URL {
-        let apiBase = baseURL.lastPathComponent.lowercased() == "v1"
-            ? baseURL
-            : baseURL.appendingPathComponent("v1", isDirectory: true)
-        return apiBase
-            .appendingPathComponent("images", isDirectory: true)
-            .appendingPathComponent("generations", isDirectory: false)
+    init(baseURL: URL, apiKey: String, modelID: String) {
+        connection = CustomGenerationConnectionSnapshot(baseURL: baseURL, apiKey: apiKey)
+        self.modelID = modelID
     }
+
+    var baseURL: URL { connection.baseURL }
+    var apiKey: String { connection.apiKey }
+    var imageGenerationsURL: URL { connection.imageGenerationsURL }
+    var videosURL: URL { connection.videosURL }
 }

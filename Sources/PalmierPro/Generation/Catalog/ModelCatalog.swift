@@ -272,6 +272,7 @@ struct CatalogEntry: Decodable, Sendable {
 
 struct VideoCaps: Decodable, Sendable {
     let supportsPrompt: Bool?
+    let supportsAudioGeneration: Bool?
     let durations: [Int]
     let resolutions: [String]?
     let aspectRatios: [String]

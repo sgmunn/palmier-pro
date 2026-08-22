@@ -99,6 +99,7 @@ struct VideoModelConfig: Identifiable, Sendable {
     var creditsPerSecond: [String: Double] { entry.creditsPerSecond ?? [:] }
     var audioDiscountRate: [String: Double]? { entry.audioDiscountRate }
     var supportsPrompt: Bool { caps.supportsPrompt ?? true }
+    var supportsAudioGeneration: Bool { caps.supportsAudioGeneration ?? true }
 
     var durations: [Int] { caps.durations }
     var resolutions: [String]? { caps.resolutions }

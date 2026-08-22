@@ -152,7 +152,9 @@ private struct CustomGenerationSettings: View {
             if configuration.route == .custom {
                 TextField(L10n.string("Gateway URL"), text: $configuration.baseURLText)
                     .textFieldStyle(.roundedBorder)
-                TextField(L10n.string("Model ID"), text: $configuration.modelIDText)
+                TextField(L10n.string("Image Model ID"), text: $configuration.imageModelIDText)
+                    .textFieldStyle(.roundedBorder)
+                TextField(L10n.string("Video Model ID"), text: $configuration.videoModelIDText)
                     .textFieldStyle(.roundedBorder)
                 HStack(spacing: AppTheme.Spacing.sm) {
                     SecureField(

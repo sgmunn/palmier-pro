@@ -1,6 +1,9 @@
 import Foundation
 
 enum CustomGenerationCatalog {
+    static let imageModelID = "custom/image/default"
+    static let videoModelID = "custom/video/default"
+
     static func load() async throws -> [CatalogEntry] {
         try await Task.detached(priority: .userInitiated) {
             guard let url = BundledResource.url("GenerationCatalog/custom-generation-models.json") else {

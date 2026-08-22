@@ -29,13 +29,13 @@ enum GenerationAccess {
             guard configuration.baseURL != nil else {
                 return .refused(reason: "Enter a valid gateway URL.")
             }
-            guard configuration.modelID != nil else {
-                return .refused(reason: "Enter a gateway model ID.")
-            }
             guard configuration.hasAPIKey else {
                 return .refused(reason: "Enter a gateway API key.")
             }
             if let modelID {
+                guard configuration.remoteModelID(for: modelID) != nil else {
+                    return .refused(reason: "Enter a model ID for the selected media type.")
+                }
                 guard ModelPreferences.shared.isEnabled(modelID), ModelRegistry.exists(id: modelID) else {
                     return .refused(reason: "The selected model is unavailable.")
                 }

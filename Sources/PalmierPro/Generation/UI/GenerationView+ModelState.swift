@@ -243,7 +243,7 @@ extension GenerationView {
     }
 
     var supportsAudioToggle: Bool {
-        selectedType == .video && videoModel.audioDiscountRate != nil
+        selectedType == .video && videoModel.supportsAudioGeneration && videoModel.audioDiscountRate != nil
     }
 
     var supportsDraftToggle: Bool {
@@ -261,7 +261,7 @@ extension GenerationView {
     }
 
     var effectiveGenerateAudio: Bool {
-        supportsAudioToggle ? generateAudio : true
+        videoModel.supportsAudioGeneration && (supportsAudioToggle ? generateAudio : true)
     }
 
     var promptPlaceholder: String {

@@ -732,6 +732,7 @@ extension EditorViewModel {
     func deleteMediaAssets(ids: Set<String>) {
         guard !ids.isEmpty else { return }
         guard mediaAssets.contains(where: { ids.contains($0.id) }) else { return }
+        generationService.cancelGeneration(assetIDs: ids)
 
         let before = mediaLibraryUndoSnapshot()
         let clipIdsToRemove = removeClipsReferencingAssets(ids)

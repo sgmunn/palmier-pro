@@ -112,7 +112,10 @@ final class MediaAsset: Identifiable {
     var isRecoveringGeneration: Bool {
         guard canResumeGeneration else { return false }
         if isGenerating { return true }
-        if case .failed = generationStatus { return generationInput?.resultURLs?.isEmpty == false }
+        if case .failed = generationStatus {
+            return generationInput?.generationBackendID == GenerationRoute.custom.rawValue
+                || generationInput?.resultURLs?.isEmpty == false
+        }
         return false
     }
 
