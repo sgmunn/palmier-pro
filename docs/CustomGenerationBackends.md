@@ -251,9 +251,9 @@ POST /v1/images/generations or /v1/images/edits
 -> URL results or base64 results
 
 Video
-POST /v1/videos
+POST /v2/videos
 -> { id, status }
-GET /v1/videos/{id}
+GET /v2/videos/{id}
 -> { id, status, error?, outputs?: { video_url } }
 
 Audio
@@ -387,32 +387,32 @@ save the project, reopen it, and use the generated asset without Palmier credent
 
 The panel and MCP paths meet this acceptance criterion. Phase 1 is complete.
 
-### Phase 2: asynchronous video — next
+### Phase 2: asynchronous video — implemented, pending live verification
 
 Together's current [video generation API](https://docs.together.ai/docs/inference/videos/overview)
-fits the required lifecycle: create with `POST /v1/videos`, retrieve with
-`GET /v1/videos/{id}`, and download the completed `outputs.video_url`.
+fits the required lifecycle: create with `POST /v2/videos`, retrieve with
+`GET /v2/videos/{id}`, and download the completed `outputs.video_url`.
 Dedicated-endpoint management is not part of this phase.
 
-Implement Phase 2 in this order:
+Phase 2 implements:
 
-1. **Add per-media remote model configuration.** Replace the single generic model
-   setting with explicit image and video model IDs. Snapshot the selected video model
-   into `GenerationInput.remoteModel`; changing settings later must not retarget an
+1. **Per-media remote model configuration.** Explicit image and video model IDs
+   replace the single generic setting. The selected video model is snapshotted into
+   `GenerationInput.remoteModel`, so changing settings later does not retarget an
    accepted job.
-2. **Add one conservative video catalog entry.** Describe only the durations,
+2. **One conservative video catalog entry.** The catalog describes only the durations,
    resolutions, aspect ratios, audio behavior, and input modes actually supported by
-   the first Together model. Start with text-to-video; do not expose image or video
-   references until their delivery contract is implemented.
-3. **Define accepted-job contracts.** Add create and retrieve request/response types
+   the first Together model. It exposes text-to-video and one starting frame, but no
+   end frame or general image, video, or audio references.
+3. **Accepted-job contracts.** Create and retrieve request/response types
    plus an immutable receipt containing backend ID, remote model ID, and job ID.
    Normalize only `queued`, `in_progress`, `completed`, and `failed`; unknown states
    fail explicitly.
-4. **Persist acceptance before polling.** Immediately write `generationBackendID`,
+4. **Persist acceptance before polling.** The service immediately writes `generationBackendID`,
    `remoteModel`, and `backendJobId` to every placeholder and checkpoint the project.
    A crash after acceptance must leave enough state to resume the same remote job.
-5. **Poll outside the main actor.** Use a bounded cadence, honor local cancellation,
-   apply a finite request timeout, and surface provider errors. A local timeout or missing
+5. **Poll outside the main actor.** The runner uses a bounded cadence, honors local cancellation,
+   applies a finite request timeout, and surfaces provider errors. A local timeout or missing
    credentials must preserve the remote job ID for retry instead of submitting again.
    Cancellation stops local polling and commits; it does not promise cancellation of
    provider work.
@@ -420,13 +420,13 @@ Implement Phase 2 in this order:
    Convex; custom IDs retrieve the stored remote job. Unknown backends fail visibly
    and never fall through to hosted. Deduplicate concurrent resume attempts for the
    same job.
-7. **Reuse exact finalization.** Download the completed video to a unique staged
+7. **Reuse exact finalization.** Completed video downloads use a unique staged
    location off the main actor, validate its HTTP response and media type, and install
    it through `commitStagedProjectMedia`. Repeated terminal polling must not install a
    second asset.
-8. **Add the first image-to-video mode only after recovery passes.** Reuse existing
-   image preprocessing, define how the prepared image reaches Together, and reject
-   end-frame or reference combinations the selected model cannot honor.
+8. **One image-to-video mode.** A prepared starting frame is sent inline through
+   Together's top-level `frame_images` contract. End frames and other reference
+   combinations remain unsupported.
 
 Required automated coverage:
 
@@ -552,11 +552,8 @@ Phase 1 resolved the original decisions:
 4. custom selection exclusively replaces hosted generation and never falls back;
 5. URL, remote model ID, and API key are user-configurable, with the key in Keychain.
 
-Before Phase 2 code begins, choose the first Together video model from the current
-[serverless catalog](https://docs.together.ai/docs/serverless/models) and record its
-exact text-to-video and image-to-video capability matrix in the bundled catalog.
-`minimax/video-01-director` is the lowest-risk text-to-video starting point because
-Together uses it in the official asynchronous polling example and lists a fixed
-720p/5-second tier. Image-to-video can follow with a model whose keyframe behavior is
-documented. This model choice is the only product decision needed; the lifecycle,
-persistence, recovery, and finalization architecture is defined above.
+Phase 2 uses `minimax/hailuo-02` from Together's current
+[serverless catalog](https://docs.together.ai/docs/serverless/models). The bundled
+catalog exposes its verified 10-second, 768p, 16:9 text-to-video and starting-frame
+image-to-video modes without audio. Live panel, quit/reopen, and MCP verification are
+still required before marking the acceptance criteria complete.
