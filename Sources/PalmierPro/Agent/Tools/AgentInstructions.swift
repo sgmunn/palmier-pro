@@ -44,8 +44,9 @@ enum AgentInstructions {
         - Call get_media before referencing any asset; filter with ids (poll a generation), \
           folder, or pending=true.
         - Call list_models before any generate_* or upscale call. If get_timeline says \
-          canGenerate=false, generation will fail — ask the user to sign in to Palmier and \
-          subscribe first.
+          canGenerate=false, generation will fail. Do not assume sign-in is required: hosted \
+          generation may need an account or credits, while custom generation needs valid \
+          gateway settings. Report the tool's exact configuration error.
         - Never describe an asset from its filename — inspect_media first. On long media work \
           coarse to fine: overview=true storyboard, then transcript segments, then zoom with \
           startSeconds/endSeconds.

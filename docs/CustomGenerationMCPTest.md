@@ -56,10 +56,11 @@ It then:
 3. polls that ID with `get_media` until `generationStatus` disappears or fails;
 4. calls `inspect_media` and requires an image response.
 
-A successful run ends with output like:
+A successful run verifies that the returned pixel dimensions match the requested
+aspect ratio and ends with output like:
 
 ```text
-PASS: <media-ref> is ready and inspect_media read back image/jpeg through MCP.
+PASS: <media-ref> is 1024x576 and inspect_media read back image/jpeg through MCP.
 ```
 
 Useful options:

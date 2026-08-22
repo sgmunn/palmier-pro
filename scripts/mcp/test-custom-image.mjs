@@ -186,6 +186,12 @@ function sleep(seconds) {
   return new Promise((resolve) => setTimeout(resolve, seconds * 1_000));
 }
 
+function expectedRatio(value) {
+  const match = value.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  if (!match) throw new Error(`Cannot verify invalid aspect ratio: ${value}`);
+  return Number(match[1]) / Number(match[2]);
+}
+
 async function confirmPaidRequest(options) {
   if (options.yes) return;
   if (!process.stdin.isTTY) {
@@ -253,12 +259,25 @@ async function run() {
     const asset = payload.assets?.find((candidate) => candidate.id === mediaRef);
     if (!asset) throw new Error(`Placeholder ${mediaRef} disappeared from the media library.`);
     if (!asset.generationStatus) {
+      if (!asset.width || !asset.height) {
+        throw new Error("Asset became ready without readable dimensions.");
+      }
+      const requestedRatio = expectedRatio(options.aspectRatio);
+      const actualRatio = asset.width / asset.height;
+      const relativeError = Math.abs(actualRatio - requestedRatio) / requestedRatio;
+      if (relativeError > 0.03) {
+        throw new Error(
+          `Requested ${options.aspectRatio}, but the generated asset is ${asset.width}x${asset.height}.`,
+        );
+      }
       const inspected = await client.callTool("inspect_media", { mediaRef });
       const image = inspected.result.content?.find((block) => block.type === "image");
       if (!image || !image.mimeType?.startsWith("image/")) {
         throw new Error("Asset became ready but inspect_media did not return an image.");
       }
-      console.log(`PASS: ${mediaRef} is ready and inspect_media read back ${image.mimeType} through MCP.`);
+      console.log(
+        `PASS: ${mediaRef} is ${asset.width}x${asset.height} and inspect_media read back ${image.mimeType} through MCP.`,
+      );
       return;
     }
     if (asset.generationStatus.startsWith("failed")) {

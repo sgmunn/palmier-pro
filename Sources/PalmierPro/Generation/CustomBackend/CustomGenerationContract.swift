@@ -5,11 +5,13 @@ struct CustomImageGenerationRequest: Encodable, Sendable {
     let prompt: String
     let n: Int
     let aspectRatio: String
+    let width: Int
+    let height: Int
     let resolution: String?
     let quality: String?
 
     private enum CodingKeys: String, CodingKey {
-        case model, prompt, n, quality
+        case model, prompt, n, width, height, quality
         case aspectRatio = "aspect_ratio"
         case resolution
     }

@@ -37,6 +37,14 @@ struct CustomGenerationTests {
         ))
     }
 
+    @Test("MCP image generation requires an explicit aspect ratio")
+    func imageGenerationSchemaRequiresAspectRatio() throws {
+        let tool = try #require(ToolDefinitions.mcpServer.first { $0.name == .generateImage })
+        let required = try #require(tool.inputSchema["required"] as? [String])
+
+        #expect(required == ["prompt", "aspectRatio"])
+    }
+
     @Test("Bundled catalog maps the custom image model")
     func bundledCatalog() async throws {
         let entries = try await CustomGenerationCatalog.load()
@@ -59,6 +67,8 @@ struct CustomGenerationTests {
             prompt: "A quiet harbor",
             n: 2,
             aspectRatio: "16:9",
+            width: 1024,
+            height: 576,
             resolution: "1920x1080",
             quality: "high"
         )
@@ -70,8 +80,26 @@ struct CustomGenerationTests {
         #expect(object["prompt"] as? String == "A quiet harbor")
         #expect(object["n"] as? Int == 2)
         #expect(object["aspect_ratio"] as? String == "16:9")
+        #expect(object["width"] as? Int == 1024)
+        #expect(object["height"] as? Int == 576)
         #expect(object["resolution"] as? String == "1920x1080")
         #expect(object["quality"] as? String == "high")
+    }
+
+    @Test(
+        "Custom image dimensions match catalog aspect ratios",
+        arguments: [
+            ("1:1", 1024, 1024),
+            ("16:9", 1024, 576),
+            ("9:16", 576, 1024),
+            ("4:3", 1024, 768),
+            ("3:4", 768, 1024),
+        ]
+    )
+    func customImageDimensions(aspectRatio: String, width: Int, height: Int) throws {
+        let dimensions = try #require(CustomGenerationRunner.dimensions(for: aspectRatio))
+        #expect(dimensions.width == width)
+        #expect(dimensions.height == height)
     }
 
     @Test("Image response accepts URL and base64 outputs")

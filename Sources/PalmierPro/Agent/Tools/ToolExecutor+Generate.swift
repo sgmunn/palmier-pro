@@ -264,7 +264,7 @@ extension ToolExecutor {
             throw ToolError(reason)
         }
         try requirePlan(for: model.id, paidOnly: model.paidOnly)
-        let aspectRatio = args.string("aspectRatio") ?? model.aspectRatios.first ?? ""
+        let aspectRatio = try args.requireString("aspectRatio")
         let resolution = args.string("resolution") ?? model.resolutions?.first
         let quality = args.string("quality") ?? model.qualities?.last
         let refIds = args.stringArray("referenceMediaRefs")
