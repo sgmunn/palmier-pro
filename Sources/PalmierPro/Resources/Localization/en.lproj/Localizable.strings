@@ -120,6 +120,7 @@
 "Audio" = "Audio";
 "Audio Model ID" = "Audio Model ID";
 "Audio Ref" = "Audio Ref";
+"Audio Voice IDs" = "Audio Voice IDs";
 "Audio extraction failed: %@" = "Audio extraction failed: %@";
 "Auto" = "Auto";
 "Available" = "Available";
@@ -367,6 +368,7 @@
 "Enter a video model ID." = "Enter a video model ID.";
 "Enter an audio model ID." = "Enter an audio model ID.";
 "Enter an image model ID." = "Enter an image model ID.";
+"Enter at least one audio voice ID." = "Enter at least one audio voice ID.";
 "Estimated cost. Actual billing may differ slightly." = "Estimated cost. Actual billing may differ slightly.";
 "Exclusion" = "Exclusion";
 "Expand" = "Expand";
@@ -872,6 +874,7 @@
 "Send only the visible clip range to the model, not the full source." = "Send only the visible clip range to the model, not the full source.";
 "Send usage data from your interactions with Palmier Pro to help improve the app." = "Send usage data from your interactions with Palmier Pro to help improve the app.";
 "Sending…" = "Sending…";
+"Separate voice IDs with commas. The first voice is the default." = "Separate voice IDs with commas. The first voice is the default.";
 "Sequence" = "Sequence";
 "Server URL" = "Server URL";
 "Set as first frame" = "Set as first frame";

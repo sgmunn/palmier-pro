@@ -76,6 +76,13 @@ struct AudioModelConfig: Identifiable, Sendable {
 
     let entry: CatalogEntry
     let caps: AudioCaps
+    private let configuredVoiceIDs: [String]?
+
+    init(entry: CatalogEntry, caps: AudioCaps, configuredVoiceIDs: [String]? = nil) {
+        self.entry = entry
+        self.caps = caps
+        self.configuredVoiceIDs = configuredVoiceIDs
+    }
 
     var id: String { entry.id }
     var displayName: String { entry.displayName }
@@ -84,8 +91,11 @@ struct AudioModelConfig: Identifiable, Sendable {
     var category: Category {
         Category(rawValue: caps.category) ?? .tts
     }
-    var voices: [String]? { caps.voices }
-    var defaultVoice: String? { caps.defaultVoice }
+    var voices: [String]? { configuredVoiceIDs ?? caps.voices }
+    var defaultVoice: String? {
+        if let configuredVoiceIDs { return configuredVoiceIDs.first }
+        return caps.defaultVoice
+    }
     var supportsLyrics: Bool { caps.supportsLyrics }
     var supportsInstrumental: Bool { caps.supportsInstrumental }
     var supportsStyleInstructions: Bool { caps.supportsStyleInstructions }
@@ -159,9 +169,12 @@ struct AudioModelConfig: Identifiable, Sendable {
         if inputs.contains(.text), promptLen < minPromptLength {
             return "\(displayName) requires prompt ≥ \(minPromptLength) characters (got \(promptLen))."
         }
-        if let allowed = voices, let v = params.voice, !v.isEmpty, !allowed.contains(v) {
-            let shown = Array(allowed.prefix(6)) + (allowed.count > 6 ? ["…"] : [])
-            return unsupportedValue(model: displayName, field: "voice", value: v, allowed: shown)
+        if let allowed = voices {
+            guard let voice = params.voice, !voice.isEmpty else { return "Choose a voice." }
+            if !allowed.contains(voice) {
+                let shown = Array(allowed.prefix(6)) + (allowed.count > 6 ? ["…"] : [])
+                return unsupportedValue(model: displayName, field: "voice", value: voice, allowed: shown)
+            }
         }
         if let allowed = durations, let d = params.durationSeconds, !allowed.contains(d) {
             return unsupportedValue(

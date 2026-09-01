@@ -632,6 +632,23 @@ extension GenerationView {
         normalizeAudioDuration()
     }
 
+    func normalizeAudioVoiceSelection() {
+        selectedVoice = Self.normalizedAudioVoiceSelection(
+            selectedVoice,
+            voices: audioModel.voices,
+            defaultVoice: audioModel.defaultVoice
+        )
+    }
+
+    static func normalizedAudioVoiceSelection(
+        _ selectedVoice: String,
+        voices: [String]?,
+        defaultVoice: String?
+    ) -> String {
+        guard let voices, !voices.contains(selectedVoice) else { return selectedVoice }
+        return defaultVoice ?? ""
+    }
+
     private func normalizeAudioDuration() {
         let model = audioModel
         if let range = model.durationRange,

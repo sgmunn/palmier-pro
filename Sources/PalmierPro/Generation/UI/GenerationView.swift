@@ -169,6 +169,7 @@ struct GenerationView: View {
         .onChange(of: ModelCatalog.shared.isLoaded) { _, loaded in
             guard loaded else { return }
             normalizeGenerationType()
+            if selectedType == .audio { normalizeAudioVoiceSelection() }
         }
         .onChange(of: upscaleModels.isEmpty) { _, isEmpty in
             if isEmpty && selectedType == .upscale { selectedType = .video }

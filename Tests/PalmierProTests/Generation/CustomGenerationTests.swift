@@ -64,6 +64,29 @@ struct CustomGenerationTests {
     @Test("Fresh custom configuration uses a serverless speech model")
     func defaultAudioModel() {
         #expect(CustomGenerationConfiguration.defaultAudioModelID == "hexgrad/Kokoro-82M")
+        #expect(CustomGenerationConfiguration.defaultAudioVoiceIDs == ["af_alloy", "af_bella", "af_heart"])
+    }
+
+    @Test("Configured audio voices are trimmed and deduplicated in order")
+    func configuredAudioVoiceParsing() {
+        #expect(CustomGenerationConfiguration.parseAudioVoiceIDs(
+            " voice-one,voice-two\nvoice-one, , voice-three "
+        ) == ["voice-one", "voice-two", "voice-three"])
+    }
+
+    @Test("A removed audio voice selects the new configured default")
+    @MainActor
+    func removedAudioVoiceSelection() {
+        #expect(GenerationView.normalizedAudioVoiceSelection(
+            "old-voice",
+            voices: ["new-default", "new-voice"],
+            defaultVoice: "new-default"
+        ) == "new-default")
+        #expect(GenerationView.normalizedAudioVoiceSelection(
+            "new-voice",
+            voices: ["new-default", "new-voice"],
+            defaultVoice: "new-default"
+        ) == "new-voice")
     }
 
     @Test(
@@ -175,10 +198,35 @@ struct CustomGenerationTests {
             return
         }
         #expect(audioCapabilities.category == "tts")
-        #expect(audioCapabilities.defaultVoice == "af_alloy")
+        #expect(audioCapabilities.voices == nil)
+        #expect(audioCapabilities.defaultVoice == nil)
         #expect(audioCapabilities.inputs == ["text"])
         #expect(audioCapabilities.maxReferenceImages == 0)
         #expect(audioCapabilities.maxReferenceAudios == 0)
+
+        let configuredAudio = AudioModelConfig(
+            entry: audio,
+            caps: audioCapabilities,
+            configuredVoiceIDs: ["voice-one", "voice-two"]
+        )
+        #expect(configuredAudio.voices == ["voice-one", "voice-two"])
+        #expect(configuredAudio.defaultVoice == "voice-one")
+        #expect(configuredAudio.validate(params: AudioGenerationParams(
+            prompt: "Testing speech",
+            voice: "voice-two",
+            lyrics: nil,
+            styleInstructions: nil,
+            instrumental: false,
+            durationSeconds: nil
+        )) == nil)
+        #expect(configuredAudio.validate(params: AudioGenerationParams(
+            prompt: "Testing speech",
+            voice: nil,
+            lyrics: nil,
+            styleInstructions: nil,
+            instrumental: false,
+            durationSeconds: nil
+        )) == "Choose a voice.")
     }
 
     @Test("Speech request uses the OpenAI-compatible field names")

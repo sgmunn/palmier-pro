@@ -158,6 +158,11 @@ private struct CustomGenerationSettings: View {
                     .textFieldStyle(.roundedBorder)
                 TextField(L10n.string("Audio Model ID"), text: $configuration.audioModelIDText)
                     .textFieldStyle(.roundedBorder)
+                TextField(L10n.string("Audio Voice IDs"), text: $configuration.audioVoiceIDsText)
+                    .textFieldStyle(.roundedBorder)
+                Text(L10n.string("Separate voice IDs with commas. The first voice is the default."))
+                    .font(.system(size: AppTheme.FontSize.sm))
+                    .foregroundStyle(AppTheme.Text.tertiaryColor)
                 HStack(spacing: AppTheme.Spacing.sm) {
                     SecureField(
                         configuration.hasAPIKey ? L10n.string("API key saved") : L10n.string("API key"),

@@ -11,18 +11,22 @@ final class CustomGenerationConfiguration {
     static let shared = CustomGenerationConfiguration()
     nonisolated static let defaultImageModelID = "black-forest-labs/FLUX.2-dev"
     nonisolated static let defaultAudioModelID = "hexgrad/Kokoro-82M"
+    nonisolated static let defaultAudioVoiceIDs = ["af_alloy", "af_bella", "af_heart"]
 
     private static let routeKey = "generationRoute"
     private static let baseURLKey = "customGenerationBaseURL"
     private static let imageModelIDKey = "customGenerationImageModelID"
     private static let videoModelIDKey = "customGenerationVideoModelID"
     private static let audioModelIDKey = "customGenerationAudioModelID"
+    private static let audioVoiceIDsKey = "customGenerationAudioVoiceIDs"
     nonisolated private static let apiKeyAccount = "custom-generation-gateway"
 
     private let defaults: UserDefaults
+    @ObservationIgnored private var catalogReloadTask: Task<Void, Never>?
 
     var route: GenerationRoute {
         didSet {
+            catalogReloadTask?.cancel()
             defaults.set(route.rawValue, forKey: Self.routeKey)
             ModelCatalog.shared.reload()
         }
@@ -42,6 +46,13 @@ final class CustomGenerationConfiguration {
 
     var audioModelIDText: String {
         didSet { defaults.set(audioModelIDText, forKey: Self.audioModelIDKey) }
+    }
+
+    var audioVoiceIDsText: String {
+        didSet {
+            defaults.set(audioVoiceIDsText, forKey: Self.audioVoiceIDsKey)
+            scheduleCatalogReload()
+        }
     }
 
     private(set) var hasAPIKey = false
@@ -70,12 +81,17 @@ final class CustomGenerationConfiguration {
         return value.isEmpty ? nil : value
     }
 
+    var audioVoiceIDs: [String] {
+        Self.parseAudioVoiceIDs(audioVoiceIDsText)
+    }
+
     var configurationError: String? {
         guard route == .custom else { return nil }
         guard baseURL != nil else { return L10n.string("Enter a valid gateway URL.") }
         guard imageModelID != nil else { return L10n.string("Enter an image model ID.") }
         guard videoModelID != nil else { return L10n.string("Enter a video model ID.") }
         guard audioModelID != nil else { return L10n.string("Enter an audio model ID.") }
+        guard !audioVoiceIDs.isEmpty else { return L10n.string("Enter at least one audio voice ID.") }
         guard hasAPIKey else { return L10n.string("Enter a gateway API key.") }
         return nil
     }
@@ -90,6 +106,8 @@ final class CustomGenerationConfiguration {
             ?? "minimax/hailuo-02"
         audioModelIDText = defaults.string(forKey: Self.audioModelIDKey)
             ?? Self.defaultAudioModelID
+        audioVoiceIDsText = defaults.string(forKey: Self.audioVoiceIDsKey)
+            ?? Self.defaultAudioVoiceIDs.joined(separator: ", ")
         Task { [weak self] in
             let hasKey = await Self.loadAPIKey() != nil
             self?.hasAPIKey = hasKey
@@ -143,6 +161,28 @@ final class CustomGenerationConfiguration {
         case CustomGenerationCatalog.videoModelID: videoModelID
         case CustomGenerationCatalog.audioModelID: audioModelID
         default: nil
+        }
+    }
+
+    nonisolated static func parseAudioVoiceIDs(_ value: String) -> [String] {
+        var seen: Set<String> = []
+        return value
+            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    private func scheduleCatalogReload() {
+        guard route == .custom else { return }
+        catalogReloadTask?.cancel()
+        catalogReloadTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            ModelCatalog.shared.reload()
         }
     }
 }

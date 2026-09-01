@@ -75,11 +75,12 @@ final class ModelCatalog {
         case .hosted:
             startSubscription()
         case .custom:
+            let audioVoiceIDs = CustomGenerationConfiguration.shared.audioVoiceIDs
             catalogTask = Task { [weak self] in
                 do {
                     let entries = try await CustomGenerationCatalog.load()
                     guard !Task.isCancelled else { return }
-                    self?.apply(entries)
+                    self?.apply(entries, customAudioVoiceIDs: audioVoiceIDs)
                 } catch {
                     guard !Task.isCancelled else { return }
                     self?.lastError = error.localizedDescription
@@ -131,7 +132,7 @@ final class ModelCatalog {
         }
     }
 
-    private func apply(_ entries: [CatalogEntry]) {
+    private func apply(_ entries: [CatalogEntry], customAudioVoiceIDs: [String]? = nil) {
         var newVideo: [VideoModelConfig] = []
         var newImage: [ImageModelConfig] = []
         var newAudio: [AudioModelConfig] = []
@@ -154,7 +155,9 @@ final class ModelCatalog {
                 newImage.append(m)
                 newById[m.id] = .image(m)
             case .audio(let caps):
-                let m = AudioModelConfig(entry: entry, caps: caps)
+                let voiceIDs = entry.id == CustomGenerationCatalog.audioModelID
+                    ? customAudioVoiceIDs : nil
+                let m = AudioModelConfig(entry: entry, caps: caps, configuredVoiceIDs: voiceIDs)
                 newAudio.append(m)
                 newById[m.id] = .audio(m)
             case .upscale(let caps):

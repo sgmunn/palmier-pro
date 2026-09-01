@@ -63,8 +63,8 @@
     "responseShape": "audio",
     "uiCapabilities": {
       "category": "tts",
-      "voices": ["af_alloy", "af_bella", "af_heart"],
-      "defaultVoice": "af_alloy",
+      "voices": null,
+      "defaultVoice": null,
       "supportsLyrics": false,
       "supportsInstrumental": false,
       "supportsStyleInstructions": false,
