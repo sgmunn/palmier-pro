@@ -17,6 +17,9 @@ private final class CustomGenerationTestURLProtocol: URLProtocol {
         if request.httpMethod == "POST", url.path == "/v2/videos" {
             data = Data(#"{"id":"job-1","model":"runware:123@1","status":"queued"}"#.utf8)
             status = 200
+        } else if request.httpMethod == "POST", url.path == "/v1/audio/speech" {
+            data = Data([0x49, 0x44, 0x33, 0x04, 0x00, 0x00])
+            status = 200
         } else if request.httpMethod == "GET", url.path == "/v2/videos/job-1" {
             data = Data(
                 #"{"id":"job-1","model":"runware:123@1","status":"completed","outputs":{"video_url":"https://gateway.example/result.mp4"}}"#.utf8
@@ -30,7 +33,9 @@ private final class CustomGenerationTestURLProtocol: URLProtocol {
             url: url,
             statusCode: status,
             httpVersion: nil,
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: [
+                "Content-Type": url.path == "/v1/audio/speech" ? "audio/mpeg" : "application/json",
+            ]
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
@@ -54,6 +59,11 @@ struct CustomGenerationTests {
     @Test("Fresh custom configuration uses a serverless image model")
     func defaultImageModel() {
         #expect(CustomGenerationConfiguration.defaultImageModelID == "black-forest-labs/FLUX.2-dev")
+    }
+
+    @Test("Fresh custom configuration uses a serverless speech model")
+    func defaultAudioModel() {
+        #expect(CustomGenerationConfiguration.defaultAudioModelID == "hexgrad/Kokoro-82M")
     }
 
     @Test(
@@ -92,6 +102,23 @@ struct CustomGenerationTests {
         #expect(connection.videoURL(jobID: "job-123").absoluteString == expected + "/job-123")
     }
 
+    @Test(
+        "Gateway base URL resolves the audio speech endpoint",
+        arguments: [
+            ("https://api.together.ai", "https://api.together.ai/v1/audio/speech"),
+            ("https://api.together.ai/v1", "https://api.together.ai/v1/audio/speech"),
+            ("https://api.together.ai/v2", "https://api.together.ai/v1/audio/speech"),
+        ]
+    )
+    func audioEndpoint(baseURL: String, expected: String) throws {
+        let connection = CustomGenerationConnectionSnapshot(
+            baseURL: try #require(URL(string: baseURL)),
+            apiKey: "test-key"
+        )
+
+        #expect(connection.audioSpeechURL.absoluteString == expected)
+    }
+
     @Test("Image-only catalog replaces an unavailable video selection")
     @MainActor
     func imageOnlyCatalogSelection() {
@@ -122,7 +149,7 @@ struct CustomGenerationTests {
         let entries = try await CustomGenerationCatalog.load()
         let entry = try #require(entries.first { $0.id == CustomGenerationCatalog.imageModelID })
 
-        #expect(entries.count == 2)
+        #expect(entries.count == 3)
         #expect(entry.id == "custom/image/default")
         guard case .image(let capabilities) = entry.uiCapabilities else {
             Issue.record("Expected image capabilities")
@@ -141,6 +168,120 @@ struct CustomGenerationTests {
         #expect(videoCapabilities.aspectRatios == ["16:9"])
         #expect(videoCapabilities.supportsFirstFrame)
         #expect(!videoCapabilities.supportsLastFrame)
+
+        let audio = try #require(entries.first { $0.id == CustomGenerationCatalog.audioModelID })
+        guard case .audio(let audioCapabilities) = audio.uiCapabilities else {
+            Issue.record("Expected audio capabilities")
+            return
+        }
+        #expect(audioCapabilities.category == "tts")
+        #expect(audioCapabilities.defaultVoice == "af_alloy")
+        #expect(audioCapabilities.inputs == ["text"])
+        #expect(audioCapabilities.maxReferenceImages == 0)
+        #expect(audioCapabilities.maxReferenceAudios == 0)
+    }
+
+    @Test("Speech request uses the OpenAI-compatible field names")
+    func audioRequestEncoding() throws {
+        let request = CustomAudioGenerationRequest(
+            model: "hexgrad/Kokoro-82M",
+            input: "Testing speech",
+            voice: "af_alloy",
+            responseFormat: "mp3"
+        )
+        let object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        )
+
+        #expect(object["model"] as? String == "hexgrad/Kokoro-82M")
+        #expect(object["input"] as? String == "Testing speech")
+        #expect(object["voice"] as? String == "af_alloy")
+        #expect(object["response_format"] as? String == "mp3")
+    }
+
+    @Test("Speech generation preserves the returned audio type")
+    func audioClientRoundTrip() async throws {
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CustomGenerationTestURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        defer { session.invalidateAndCancel() }
+        let result = try await CustomGenerationRunner(
+            client: CustomGenerationClient(session: session, requestTimeout: 3)
+        ).generateSpeech(
+            configuration: CustomGenerationConfigurationSnapshot(
+                baseURL: try #require(URL(string: "https://gateway.example/v2")),
+                apiKey: "test-key",
+                modelID: "hexgrad/Kokoro-82M"
+            ),
+            params: AudioGenerationParams(
+                prompt: "Testing speech",
+                voice: "af_alloy",
+                lyrics: nil,
+                styleInstructions: nil,
+                instrumental: false,
+                durationSeconds: nil
+            )
+        )
+        let staged = try #require(result.stagedFiles.first)
+        let bytes: Data
+        do {
+            bytes = try await Task.detached { try Data(contentsOf: staged) }.value
+        } catch {
+            await CustomGenerationRunner.remove([staged])
+            throw error
+        }
+        await CustomGenerationRunner.remove([staged])
+
+        #expect(staged.pathExtension == "mp3")
+        #expect(bytes.starts(with: Data("ID3".utf8)))
+    }
+
+    @Test("Speech generation rejects audio transformations")
+    func audioRejectsUnsupportedInputs() async throws {
+        let params = AudioGenerationParams(
+            prompt: "Testing speech",
+            voice: "af_alloy",
+            lyrics: nil,
+            styleInstructions: nil,
+            instrumental: false,
+            durationSeconds: nil,
+            sourceURL: "file:///tmp/source.wav"
+        )
+
+        await #expect(throws: CustomGenerationError.self) {
+            try await CustomGenerationRunner().generateSpeech(
+                configuration: CustomGenerationConfigurationSnapshot(
+                    baseURL: URL(string: "https://gateway.invalid")!,
+                    apiKey: "test-key",
+                    modelID: "hexgrad/Kokoro-82M"
+                ),
+                params: params
+            )
+        }
+    }
+
+    @Test("Cancellation before speech submission does not send a request")
+    func audioCancellationBeforeSubmit() async throws {
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await CustomGenerationRunner().generateSpeech(
+                configuration: CustomGenerationConfigurationSnapshot(
+                    baseURL: URL(string: "https://gateway.invalid")!,
+                    apiKey: "test-key",
+                    modelID: "hexgrad/Kokoro-82M"
+                ),
+                params: AudioGenerationParams(
+                    prompt: "Testing speech",
+                    voice: "af_alloy",
+                    lyrics: nil,
+                    styleInstructions: nil,
+                    instrumental: false,
+                    durationSeconds: nil
+                )
+            )
+        }
+
+        await #expect(throws: CancellationError.self) { try await task.value }
     }
 
     @Test("Video request uses the Together v2 field names")

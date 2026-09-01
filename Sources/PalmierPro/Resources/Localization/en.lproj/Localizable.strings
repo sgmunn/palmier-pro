@@ -118,6 +118,7 @@
 "Aspect Ratio" = "Aspect Ratio";
 "Aspect ratio: %@" = "Aspect ratio: %@";
 "Audio" = "Audio";
+"Audio Model ID" = "Audio Model ID";
 "Audio Ref" = "Audio Ref";
 "Audio extraction failed: %@" = "Audio extraction failed: %@";
 "Auto" = "Auto";
@@ -364,6 +365,7 @@
 "Enter a gateway API key." = "Enter a gateway API key.";
 "Enter a valid gateway URL." = "Enter a valid gateway URL.";
 "Enter a video model ID." = "Enter a video model ID.";
+"Enter an audio model ID." = "Enter an audio model ID.";
 "Enter an image model ID." = "Enter an image model ID.";
 "Estimated cost. Actual billing may differ slightly." = "Estimated cost. Actual billing may differ slightly.";
 "Exclusion" = "Exclusion";

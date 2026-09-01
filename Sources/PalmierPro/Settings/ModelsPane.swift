@@ -156,6 +156,8 @@ private struct CustomGenerationSettings: View {
                     .textFieldStyle(.roundedBorder)
                 TextField(L10n.string("Video Model ID"), text: $configuration.videoModelIDText)
                     .textFieldStyle(.roundedBorder)
+                TextField(L10n.string("Audio Model ID"), text: $configuration.audioModelIDText)
+                    .textFieldStyle(.roundedBorder)
                 HStack(spacing: AppTheme.Spacing.sm) {
                     SecureField(
                         configuration.hasAPIKey ? L10n.string("API key saved") : L10n.string("API key"),

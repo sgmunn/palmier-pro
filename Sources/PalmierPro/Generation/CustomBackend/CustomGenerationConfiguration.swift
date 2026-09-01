@@ -10,11 +10,13 @@ enum GenerationRoute: String, CaseIterable, Sendable {
 final class CustomGenerationConfiguration {
     static let shared = CustomGenerationConfiguration()
     nonisolated static let defaultImageModelID = "black-forest-labs/FLUX.2-dev"
+    nonisolated static let defaultAudioModelID = "hexgrad/Kokoro-82M"
 
     private static let routeKey = "generationRoute"
     private static let baseURLKey = "customGenerationBaseURL"
     private static let imageModelIDKey = "customGenerationImageModelID"
     private static let videoModelIDKey = "customGenerationVideoModelID"
+    private static let audioModelIDKey = "customGenerationAudioModelID"
     nonisolated private static let apiKeyAccount = "custom-generation-gateway"
 
     private let defaults: UserDefaults
@@ -38,6 +40,10 @@ final class CustomGenerationConfiguration {
         didSet { defaults.set(videoModelIDText, forKey: Self.videoModelIDKey) }
     }
 
+    var audioModelIDText: String {
+        didSet { defaults.set(audioModelIDText, forKey: Self.audioModelIDKey) }
+    }
+
     private(set) var hasAPIKey = false
 
     var baseURL: URL? {
@@ -59,11 +65,17 @@ final class CustomGenerationConfiguration {
         return value.isEmpty ? nil : value
     }
 
+    var audioModelID: String? {
+        let value = audioModelIDText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
     var configurationError: String? {
         guard route == .custom else { return nil }
         guard baseURL != nil else { return L10n.string("Enter a valid gateway URL.") }
         guard imageModelID != nil else { return L10n.string("Enter an image model ID.") }
         guard videoModelID != nil else { return L10n.string("Enter a video model ID.") }
+        guard audioModelID != nil else { return L10n.string("Enter an audio model ID.") }
         guard hasAPIKey else { return L10n.string("Enter a gateway API key.") }
         return nil
     }
@@ -76,6 +88,8 @@ final class CustomGenerationConfiguration {
             ?? Self.defaultImageModelID
         videoModelIDText = defaults.string(forKey: Self.videoModelIDKey)
             ?? "minimax/hailuo-02"
+        audioModelIDText = defaults.string(forKey: Self.audioModelIDKey)
+            ?? Self.defaultAudioModelID
         Task { [weak self] in
             let hasKey = await Self.loadAPIKey() != nil
             self?.hasAPIKey = hasKey
@@ -106,7 +120,8 @@ final class CustomGenerationConfiguration {
         let modelID: String? = switch kind {
         case .image: imageModelID
         case .video: videoModelID
-        case .audio, .upscale: nil
+        case .audio: audioModelID
+        case .upscale: nil
         }
         guard let modelID else {
             throw CustomGenerationError.invalidConfiguration("Enter a " + kind.rawValue + " model ID.")
@@ -126,6 +141,7 @@ final class CustomGenerationConfiguration {
         switch catalogModelID {
         case CustomGenerationCatalog.imageModelID: imageModelID
         case CustomGenerationCatalog.videoModelID: videoModelID
+        case CustomGenerationCatalog.audioModelID: audioModelID
         default: nil
         }
     }
@@ -141,6 +157,10 @@ struct CustomGenerationConnectionSnapshot: Sendable {
 
     var videosURL: URL {
         endpoint(version: "v2", components: ["videos"])
+    }
+
+    var audioSpeechURL: URL {
+        endpoint(version: "v1", components: ["audio", "speech"])
     }
 
     func videoURL(jobID: String) -> URL {
@@ -171,4 +191,5 @@ struct CustomGenerationConfigurationSnapshot: Sendable {
     var apiKey: String { connection.apiKey }
     var imageGenerationsURL: URL { connection.imageGenerationsURL }
     var videosURL: URL { connection.videosURL }
+    var audioSpeechURL: URL { connection.audioSpeechURL }
 }

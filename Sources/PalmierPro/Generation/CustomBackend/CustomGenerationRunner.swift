@@ -171,6 +171,52 @@ struct CustomGenerationRunner: Sendable {
         }
     }
 
+    func generateSpeech(
+        configuration: CustomGenerationConfigurationSnapshot,
+        params: AudioGenerationParams
+    ) async throws -> CustomGenerationResult {
+        try Task.checkCancellation()
+        guard params.lyrics == nil,
+              params.styleInstructions == nil,
+              !params.instrumental,
+              params.durationSeconds == nil,
+              params.videoURL == nil,
+              params.sourceURL == nil,
+              params.referenceImageURL == nil,
+              params.referenceAudioURLs?.isEmpty != false,
+              params.targetLanguage == nil,
+              params.multilingual == nil else {
+            throw CustomGenerationError.unsupported(
+                "The custom speech model supports text and one configured voice only."
+            )
+        }
+        let prompt = params.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else {
+            throw CustomGenerationError.unsupported("Enter text to generate speech.")
+        }
+        guard let voice = params.voice?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !voice.isEmpty else {
+            throw CustomGenerationError.unsupported("Choose a voice for speech generation.")
+        }
+        let response = try await client.generateSpeech(
+            configuration: configuration,
+            request: CustomAudioGenerationRequest(
+                model: configuration.modelID,
+                input: prompt,
+                voice: voice,
+                responseFormat: "mp3"
+            )
+        )
+        let staged = try await Self.stageAudio(response.data, mimeType: response.mimeType)
+        do {
+            try Task.checkCancellation()
+            return CustomGenerationResult(stagedFiles: [staged])
+        } catch {
+            await Self.remove([staged])
+            throw error
+        }
+    }
+
     static func dimensions(for aspectRatio: String) -> (width: Int, height: Int)? {
         switch aspectRatio {
         case "1:1": (1024, 1024)
@@ -292,6 +338,44 @@ struct CustomGenerationRunner: Sendable {
                 throw error
             }
         }.value
+    }
+
+    private static func stageAudio(_ data: Data, mimeType: String?) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            guard let fileExtension = audioExtension(data.prefix(16), mimeType: mimeType) else {
+                throw CustomGenerationError.invalidResponse("Gateway response is not supported audio.")
+            }
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("palmier-custom-generation-\(UUID().uuidString)", isDirectory: true)
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let destination = directory.appendingPathComponent("result.\(fileExtension)")
+                try data.write(to: destination, options: .atomic)
+                return destination
+            } catch {
+                try? FileManager.default.removeItem(at: directory)
+                throw error
+            }
+        }.value
+    }
+
+    private static func audioExtension(_ bytes: Data.SubSequence, mimeType: String?) -> String? {
+        let data = Data(bytes)
+        if data.count >= 12,
+           data.prefix(4) == Data("RIFF".utf8),
+           data.dropFirst(8).prefix(4) == Data("WAVE".utf8) { return "wav" }
+        if data.starts(with: Data("fLaC".utf8)) { return "flac" }
+        if data.starts(with: Data("OggS".utf8)) { return "ogg" }
+        if data.starts(with: Data("ID3".utf8)) { return "mp3" }
+        if data.count >= 2, data[0] == 0xFF, data[1] & 0xE0 == 0xE0 { return "mp3" }
+        return switch mimeType?.lowercased().split(separator: ";").first.map(String.init) {
+        case "audio/mpeg", "audio/mp3": "mp3"
+        case "audio/wav", "audio/x-wav", "audio/wave": "wav"
+        case "audio/flac": "flac"
+        case "audio/ogg", "audio/opus": "ogg"
+        case "audio/aac": "aac"
+        default: nil
+        }
     }
 
     private static func imageExtension(_ bytes: Data.SubSequence) -> String? {

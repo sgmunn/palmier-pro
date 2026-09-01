@@ -31,6 +31,23 @@ struct CustomImageGenerationResponse: Decodable, Sendable {
     let data: [Output]
 }
 
+struct CustomAudioGenerationRequest: Encodable, Sendable {
+    let model: String
+    let input: String
+    let voice: String
+    let responseFormat: String
+
+    private enum CodingKeys: String, CodingKey {
+        case model, input, voice
+        case responseFormat = "response_format"
+    }
+}
+
+struct CustomAudioGenerationResponse: Sendable {
+    let data: Data
+    let mimeType: String?
+}
+
 struct CustomVideoGenerationRequest: Encodable, Sendable {
     struct FrameImage: Encodable, Sendable {
         let inputImage: String

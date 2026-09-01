@@ -152,6 +152,29 @@ final class GenerationService {
                             onComplete: onComplete,
                             onFailure: onFailure
                         )
+                    case .audio:
+                        guard references.isEmpty, trimmedSourceOverride == nil,
+                              preUploadedURLs?.isEmpty != false,
+                              case .audio(let audioParams) = buildParams([]) else {
+                            throw CustomGenerationError.unsupported(
+                                "The custom speech model does not accept source or reference media."
+                            )
+                        }
+                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(for: .audio)
+                        finalInput.remoteModel = configuration.modelID
+                        persistCustomInput(finalInput, placeholders: placeholders, editor: editor)
+                        editor.onProjectCheckpointRequired?()
+                        let result = try await CustomGenerationRunner().generateSpeech(
+                            configuration: configuration,
+                            params: audioParams
+                        )
+                        await self.finalizeCustomSuccess(
+                            stagedFiles: result.stagedFiles,
+                            placeholders: placeholders,
+                            editor: editor,
+                            onComplete: onComplete,
+                            onFailure: onFailure
+                        )
                     default:
                         throw CustomGenerationError.unsupported(
                             "The custom gateway does not support this media type yet."

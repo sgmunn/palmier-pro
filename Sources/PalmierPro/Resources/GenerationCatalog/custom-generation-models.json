@@ -52,5 +52,38 @@
       "sourceVideoDraftCreditsPerSecond": null
     },
     "paidOnly": false
+  },
+  {
+    "id": "custom/audio/tts",
+    "kind": "audio",
+    "displayName": "Custom Gateway Speech",
+    "providerName": "Custom Gateway",
+    "description": "Text-to-speech generation through the configured gateway.",
+    "allowedEndpoints": ["audio"],
+    "responseShape": "audio",
+    "uiCapabilities": {
+      "category": "tts",
+      "voices": ["af_alloy", "af_bella", "af_heart"],
+      "defaultVoice": "af_alloy",
+      "supportsLyrics": false,
+      "supportsInstrumental": false,
+      "supportsStyleInstructions": false,
+      "durations": null,
+      "durationRange": null,
+      "minPromptLength": 1,
+      "inputs": ["text"],
+      "promptLabel": "Speech text",
+      "minSeconds": null,
+      "maxSeconds": null,
+      "maxReferenceImages": 0,
+      "maxReferenceAudios": 0,
+      "maxReferenceAudioSeconds": null,
+      "referenceAudioExtensions": null,
+      "referenceImagesAndAudiosExclusive": false,
+      "supportsMultilingual": false,
+      "targetLanguages": null,
+      "defaultTargetLanguage": null
+    },
+    "paidOnly": false
   }
 ]

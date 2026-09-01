@@ -51,6 +51,21 @@ struct CustomGenerationClient: Sendable {
         }
     }
 
+    func generateSpeech(
+        configuration: CustomGenerationConfigurationSnapshot,
+        request payload: CustomAudioGenerationRequest
+    ) async throws -> CustomAudioGenerationResponse {
+        var request = URLRequest(url: configuration.audioSpeechURL)
+        request.httpMethod = "POST"
+        configure(&request, apiKey: configuration.apiKey)
+        request.httpBody = try JSONEncoder().encode(payload)
+        let (data, response) = try await response(for: request)
+        guard !data.isEmpty else {
+            throw CustomGenerationError.invalidResponse("Gateway returned empty audio.")
+        }
+        return CustomAudioGenerationResponse(data: data, mimeType: response.mimeType)
+    }
+
     func retrieveVideo(
         connection: CustomGenerationConnectionSnapshot,
         jobID: String
@@ -75,6 +90,10 @@ struct CustomGenerationClient: Sendable {
     }
 
     private func responseData(for request: URLRequest) async throws -> Data {
+        try await response(for: request).0
+    }
+
+    private func response(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw CustomGenerationError.invalidResponse("Gateway returned a non-HTTP response.")
@@ -83,7 +102,7 @@ struct CustomGenerationClient: Sendable {
             let body = String(decoding: data.prefix(1_000), as: UTF8.self)
             throw CustomGenerationError.gateway(status: http.statusCode, message: body.isEmpty ? "Request failed." : body)
         }
-        return data
+        return (data, http)
     }
 
     private func decodeVideoResponse(_ data: Data) throws -> CustomVideoJobResponse {
