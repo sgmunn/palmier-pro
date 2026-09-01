@@ -32,7 +32,7 @@ proven. This keeps every phase usable end to end.
 
 ## Implementation status
 
-Status as of August 21, 2026 on `fork/custom-providers`:
+Status as of September 1, 2026 on `fork/custom-providers`:
 
 - Phase 1 text-to-image is implemented. The selected route, gateway URL, and remote
   model ID are persisted in settings; the API key is stored in Keychain.
@@ -43,6 +43,8 @@ Status as of August 21, 2026 on `fork/custom-providers`:
   lifecycle.
 - The image contract sends `POST /v1/images/generations` and accepts URL or base64
   results. A base URL ending in `/v1` is not given a duplicate version component.
+- The speech contract sends `POST /v1/audio/speech`, requests MP3 output, and
+  preserves the actual supported content type and extension returned by the gateway.
 - `GenerationInput` persists `generationBackendID` and the resolved remote model ID,
   so completed assets retain the execution identity rather than depending on current
   settings.
@@ -65,6 +67,8 @@ Verified so far:
 - a separate Codex task discovered and used the Palmier MCP tools to complete the
   same 16:9 generation and read-back workflow;
 - the packaged app contains the custom catalog and passes signature verification.
+- custom video generation completed through the panel and MCP with persisted backend,
+  remote-model, and provider-job provenance visible through `inspect_media`.
 
 Deliberately outside the completed Phase 1 scope:
 
@@ -389,7 +393,7 @@ save the project, reopen it, and use the generated asset without Palmier credent
 
 The panel and MCP paths meet this acceptance criterion. Phase 1 is complete.
 
-### Phase 2: asynchronous video — implemented, pending live verification
+### Phase 2: asynchronous video — complete
 
 Together's current [video generation API](https://docs.together.ai/docs/inference/videos/overview)
 fits the required lifecycle: create with `POST /v2/videos`, retrieve with
@@ -445,13 +449,26 @@ Required automated coverage:
 Acceptance: text-to-video and one supported image-to-video case complete; quitting
 after acceptance and reopening resumes the same job and installs exactly one result.
 
-### Phase 3: audio
+Text-to-video, image-to-video, and MCP provenance read-back have been verified against
+Together. Phase 2 is complete.
 
-- Add one audio category first, such as text-to-speech or music generation.
-- Reuse the video accepted-job contract if the operation is asynchronous.
-- Preserve actual content type and file extension.
-- Add source-audio/video transforms only through the existing audio submission and
-  preprocessing operations.
+### Phase 3: audio — implemented, pending live verification
+
+- [x] Add one text-to-speech catalog entry using the existing audio submission path.
+- [x] Add an independent audio model setting, defaulting to the current Together
+  serverless `hexgrad/Kokoro-82M` model.
+- [x] Send the OpenAI-compatible `POST /v1/audio/speech` request with explicit model,
+  input, voice, and response format.
+- [x] Preserve the returned supported content type and file extension during staging
+  and shared project-package finalization.
+- [x] Reject source media, references, lyrics, music controls, duration, and other
+  unsupported inputs instead of silently dropping them.
+- [x] Route the panel and `generate_audio` through the same catalog validation,
+  submission, backend selection, and finalization path.
+
+The first slice is synchronous, so it does not reuse the video accepted-job contract.
+Source-audio/video transforms remain deferred until a custom model and gateway contract
+require them.
 
 Acceptance: panel and `generate_audio` use the same model validation and produce a
 ready audio asset with waveform/finalization behavior matching hosted results.

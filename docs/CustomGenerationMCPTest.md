@@ -1,4 +1,4 @@
-# Custom image generation through MCP
+# Custom media generation through MCP
 
 This test controls a running Palmier Pro app through its local MCP server, submits
 one custom-gateway image request, polls the placeholder, and reads the completed
@@ -98,6 +98,24 @@ generation service.
 The repository script is the reproducible acceptance test. Interactive Codex
 control is useful for confirming that a normal external agent can perform the same
 workflow.
+
+## Verify text-to-speech through MCP
+
+In Settings > Models, leave Custom Gateway selected and set Audio Model ID to
+`hexgrad/Kokoro-82M`. Then start a new Codex task and ask:
+
+```text
+Use the palmier-pro MCP server. List the projects and audio models, then generate
+speech in the frontmost disposable project with custom/audio/tts and voice af_alloy.
+Speak: "Palmier Pro custom speech generation is working." Poll get_media until the
+asset is ready, inspect it, and report its asset ID, duration, file type,
+generationBackendID, and remoteModel. Do not place it on the timeline and do not use
+any other audio generation service.
+```
+
+The expected asset is ready audio with a waveform and an MP3 extension. Its provenance
+should report `custom-gateway` and `hexgrad/Kokoro-82M`; synchronous speech has no
+backend job ID.
 
 ## Troubleshooting
 
