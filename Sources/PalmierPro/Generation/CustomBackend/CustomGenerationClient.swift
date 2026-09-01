@@ -3,17 +3,20 @@ import Foundation
 struct CustomGenerationClient: Sendable {
     let session: URLSession
     let requestTimeout: TimeInterval
+    let imageGenerationTimeout: TimeInterval
     let videoSubmissionTimeout: TimeInterval
     let downloadTimeout: TimeInterval
 
     init(
         session: URLSession = .shared,
         requestTimeout: TimeInterval = 30,
+        imageGenerationTimeout: TimeInterval = 20 * 60,
         videoSubmissionTimeout: TimeInterval = 180,
         downloadTimeout: TimeInterval = 120
     ) {
         self.session = session
         self.requestTimeout = requestTimeout
+        self.imageGenerationTimeout = imageGenerationTimeout
         self.videoSubmissionTimeout = videoSubmissionTimeout
         self.downloadTimeout = downloadTimeout
     }
@@ -25,6 +28,7 @@ struct CustomGenerationClient: Sendable {
         var request = URLRequest(url: configuration.imageGenerationsURL)
         request.httpMethod = "POST"
         configure(&request, apiKey: configuration.apiKey)
+        request.timeoutInterval = imageGenerationTimeout
         request.httpBody = try JSONEncoder().encode(payload)
 
         let data = try await responseData(for: request)

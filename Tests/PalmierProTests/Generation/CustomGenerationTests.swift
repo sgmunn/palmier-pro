@@ -572,6 +572,14 @@ struct CustomGenerationTests {
         #expect(object["quality"] as? String == "high")
     }
 
+    @Test("Local image inference has a dedicated long request timeout")
+    func imageGenerationTimeout() {
+        let client = CustomGenerationClient()
+
+        #expect(client.imageGenerationTimeout == 20 * 60)
+        #expect(client.requestTimeout == 30)
+    }
+
     @Test(
         "Custom image dimensions match catalog aspect ratios",
         arguments: [
