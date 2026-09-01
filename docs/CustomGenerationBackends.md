@@ -30,6 +30,72 @@ Start with image generation. Add video only after one image request works from b
 the generation panel and the Agent/MCP tool path. Add audio after video recovery is
 proven. This keeps every phase usable end to end.
 
+## Local ComfyUI target
+
+The first self-hosted gateway implementation targets ComfyUI while preserving the
+existing Together-compatible app contract. Palmier Pro must not submit workflow
+graphs or depend on ComfyUI node IDs. The gateway owns workflow templates, parameter
+injection, ComfyUI queue execution, output collection, and provider-specific errors.
+
+```text
+Palmier Pro
+  |  POST /v1/images/generations
+  |  POST /v1/audio/speech
+  |  POST /v2/videos
+  |  GET  /v2/videos/{id}
+  v
+ComfyUI gateway
+  |  select workflow by stable model ID
+  |  inject validated request values
+  |  submit /prompt and inspect queue/history/output
+  v
+Local ComfyUI
+```
+
+The initial local model set is:
+
+| Media | Stable model ID | Workflow | Role |
+| --- | --- | --- | --- |
+| Image | `local/z-image-turbo` | Z-Image Turbo text-to-image | Fast default image generation |
+| Image | `local/flux-2-dev` | FLUX.2 Dev text-to-image | Optional higher-cost local image generation |
+| Video | `local/ltx-2.5-distilled` | LTX 2.5 distilled text-to-video or image-to-video | Local ten-second video generation |
+| Audio | `local/kokoro-82m` | Kokoro 82M text-to-speech | Local configured-voice speech generation |
+
+The gateway may later expose explicit cloud-backed model IDs, such as a Together
+image model, through the same endpoint shapes. It must never silently fall back from
+a selected local model to a billable provider or from one model to another. An
+unavailable model fails with its requested stable ID, and completed generation
+metadata preserves the actual model and backend used.
+
+The image catalog must grow from the current single `custom/image/default` entry to
+multiple selectable stable model entries. Model selection belongs to the shared
+catalog and submission path so the panel and Agent/MCP tools expose the same choices.
+The request `model` value selects the gateway workflow; separate per-model endpoints
+or Swift vendor clients are not required.
+
+Z-Image Turbo is the first implementation slice. It remains text-to-image only and
+supports the five aspect ratios already accepted by the custom image contract. The
+gateway waits for the ComfyUI image result and returns the existing OpenAI-compatible
+`data` array with URL or base64 outputs. Multiple requested images are one coherent
+request, and partial output is a failure rather than success with fewer images.
+
+Reference-image generation remains disabled until the shared catalog, validation,
+gateway request, UI, Agent/MCP schema, persistence, and undo-neutral generation
+lifecycle support the same explicit contract. FLUX.2 capability alone is not a
+reason to accept and then drop reference inputs.
+
+LTX 2.5 maps Palmier's ten-second video request to 241 frames at 24 fps. Its input
+dimensions must be divisible by 32, so the workflow may render 1376x768 and
+center-crop to the requested 1366x768 output. A starting frame selects the
+image-to-video workflow; otherwise the gateway selects text-to-video. The first
+contract keeps `generate_audio` disabled and strips generated audio if the selected
+workflow cannot avoid producing it.
+
+The reference development machine currently runs ComfyUI Desktop 0.34.2 with
+PyTorch 2.10 on Apple MPS. The official Z-Image Turbo BF16 diffusion model, Qwen 3 4B
+text encoder, VAE, and workflow template have been discovered locally. These facts
+are verification inputs, not hardcoded product paths or minimum requirements.
+
 ## Implementation status
 
 Status as of September 1, 2026 on `fork/custom-providers`:
