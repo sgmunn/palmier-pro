@@ -306,6 +306,46 @@ struct ToolExecutorImportMediaTests {
 @MainActor
 struct ToolExecutorReadOnlyTests {
 
+    @Test func inspectMediaReturnsGenerationProvenance() async throws {
+        let url = try await Task.detached {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("inspect-generated-\(UUID().uuidString).srt")
+            try Data("1\n00:00:00,000 --> 00:00:01,000\nTest\n".utf8).write(to: url, options: .atomic)
+            return url
+        }.value
+
+        let h = ToolHarness()
+        let asset = MediaAsset(
+            id: "generated-subtitle",
+            url: url,
+            type: .subtitle,
+            name: "Generated subtitle",
+            duration: 1
+        )
+        var input = GenerationInput(
+            prompt: "Test",
+            model: "custom/video/default",
+            duration: 10,
+            aspectRatio: "16:9"
+        )
+        input.generationBackendID = "custom-gateway"
+        input.remoteModel = "minimax/hailuo-02"
+        input.backendJobId = "job-123"
+        asset.generationInput = input
+        h.editor.mediaAssets.append(asset)
+
+        let result = await h.runRaw("inspect_media", args: ["mediaRef": asset.id])
+        try await Task.detached { try FileManager.default.removeItem(at: url) }.value
+
+        #expect(!result.isError, "\(ToolHarness.textOf(result))")
+        let json = try #require(
+            JSONSerialization.jsonObject(with: Data(ToolHarness.textOf(result).utf8)) as? [String: Any]
+        )
+        #expect(json["generationBackendID"] as? String == "custom-gateway")
+        #expect(json["remoteModel"] as? String == "minimax/hailuo-02")
+        #expect(json["backendJobId"] as? String == "job-123")
+    }
+
     // MARK: - get_timeline
 
     @Test func getTimelineReflectsCurrentTracksAndFrame() async throws {

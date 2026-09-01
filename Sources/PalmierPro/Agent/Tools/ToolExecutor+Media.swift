@@ -362,7 +362,12 @@ extension ToolExecutor {
         if let w = asset.sourceWidth { meta["width"] = w }
         if let h = asset.sourceHeight { meta["height"] = h }
         if let fps = asset.sourceFPS { meta["fps"] = fps }
-        if let prompt = truncatedPrompt(asset.generationInput?.prompt) { meta["prompt"] = prompt }
+        if let input = asset.generationInput {
+            if let prompt = truncatedPrompt(input.prompt) { meta["prompt"] = prompt }
+            if let backendID = input.generationBackendID { meta["generationBackendID"] = backendID }
+            if let remoteModel = input.remoteModel { meta["remoteModel"] = remoteModel }
+            if let jobID = input.backendJobId { meta["backendJobId"] = jobID }
+        }
         return meta
     }
 
