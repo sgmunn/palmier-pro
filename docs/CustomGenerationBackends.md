@@ -57,6 +57,8 @@ Verified so far:
   the project;
 - the user verified a real Together serverless request with
   `black-forest-labs/FLUX.1-schnell` and the generated asset completed successfully;
+- new configurations default to the current serverless image model
+  `black-forest-labs/FLUX.2-dev`;
 - the repository MCP client generated a Together image, polled it to completion,
   verified its requested 16:9 pixel dimensions, and read the asset back through
   `inspect_media`;

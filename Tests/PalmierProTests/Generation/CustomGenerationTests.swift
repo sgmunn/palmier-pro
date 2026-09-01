@@ -51,6 +51,11 @@ private final class TimedOutCustomGenerationTestURLProtocol: URLProtocol {
 
 @Suite("Custom generation", .serialized)
 struct CustomGenerationTests {
+    @Test("Fresh custom configuration uses a serverless image model")
+    func defaultImageModel() {
+        #expect(CustomGenerationConfiguration.defaultImageModelID == "black-forest-labs/FLUX.2-dev")
+    }
+
     @Test(
         "Gateway base URL resolves the image endpoint",
         arguments: [

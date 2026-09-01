@@ -9,6 +9,7 @@ enum GenerationRoute: String, CaseIterable, Sendable {
 @MainActor
 final class CustomGenerationConfiguration {
     static let shared = CustomGenerationConfiguration()
+    nonisolated static let defaultImageModelID = "black-forest-labs/FLUX.2-dev"
 
     private static let routeKey = "generationRoute"
     private static let baseURLKey = "customGenerationBaseURL"
@@ -72,7 +73,7 @@ final class CustomGenerationConfiguration {
         route = GenerationRoute(rawValue: defaults.string(forKey: Self.routeKey) ?? "") ?? .hosted
         baseURLText = defaults.string(forKey: Self.baseURLKey) ?? ""
         imageModelIDText = defaults.string(forKey: Self.imageModelIDKey)
-            ?? "black-forest-labs/FLUX.1-schnell"
+            ?? Self.defaultImageModelID
         videoModelIDText = defaults.string(forKey: Self.videoModelIDKey)
             ?? "minimax/hailuo-02"
         Task { [weak self] in

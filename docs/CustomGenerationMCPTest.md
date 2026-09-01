@@ -16,7 +16,7 @@ separate Codex task. Both produced a 16:9 asset and read it back through MCP.
 2. Open or create a disposable project and leave that project frontmost.
 3. In Settings > Models, select Custom Gateway and configure:
    - Gateway URL: `https://api.together.ai/v1`
-   - Model ID: `black-forest-labs/FLUX.1-schnell`
+   - Image Model ID: `black-forest-labs/FLUX.2-dev`
    - API key: a saved Together key
 4. In Settings > Agent, enable MCP Server. Palmier listens only on
    `http://127.0.0.1:19789/mcp`.
