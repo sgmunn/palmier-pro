@@ -101,8 +101,10 @@ workflow.
 
 ## Verify text-to-speech through MCP
 
-In Settings > Models, leave Custom Gateway selected and set Audio Model ID to
-`hexgrad/Kokoro-82M`. Then start a new Codex task and ask:
+In Settings > Models, leave Custom Gateway selected, set Audio Model ID to
+`hexgrad/Kokoro-82M`, and confirm Audio Voice IDs contains `af_alloy`. Voice IDs are
+comma-separated and the first configured voice is the default. Then start a new Codex
+task and ask:
 
 ```text
 Use the palmier-pro MCP server. List the projects and audio models, then generate

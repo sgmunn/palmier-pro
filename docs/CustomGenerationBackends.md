@@ -452,11 +452,13 @@ after acceptance and reopening resumes the same job and installs exactly one res
 Text-to-video, image-to-video, and MCP provenance read-back have been verified against
 Together. Phase 2 is complete.
 
-### Phase 3: audio — implemented, pending live verification
+### Phase 3: audio — complete
 
 - [x] Add one text-to-speech catalog entry using the existing audio submission path.
 - [x] Add an independent audio model setting, defaulting to the current Together
   serverless `hexgrad/Kokoro-82M` model.
+- [x] Make the ordered voice list configurable in settings; use the first configured
+  voice as the default for both the panel and MCP.
 - [x] Send the OpenAI-compatible `POST /v1/audio/speech` request with explicit model,
   input, voice, and response format.
 - [x] Preserve the returned supported content type and file extension during staging
@@ -472,6 +474,8 @@ require them.
 
 Acceptance: panel and `generate_audio` use the same model validation and produce a
 ready audio asset with waveform/finalization behavior matching hosted results.
+
+The panel and MCP paths have been verified against Together. Phase 3 is complete.
 
 ### Phase 4: optional provider management
 
