@@ -41,9 +41,18 @@ extension GenerationView {
         }
     }
 
+    var generationAccess: GenerationAccessResult {
+        GenerationAccess.evaluate(modelID: currentModelId)
+    }
+
     var aiAllowed: Bool {
-        if case .allowed = GenerationAccess.evaluate(modelID: currentModelId) { return true }
+        if case .allowed = generationAccess { return true }
         return false
+    }
+
+    var generationAccessReason: String? {
+        if case .refused(let reason) = generationAccess { return reason }
+        return nil
     }
 
     var currentModelLocked: Bool {

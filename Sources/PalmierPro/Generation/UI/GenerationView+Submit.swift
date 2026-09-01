@@ -170,7 +170,7 @@ extension GenerationView {
         .help(aiAllowed
             ? (selectedType == .upscale ? L10n.string("Upscale source media") : String())
             : (CustomGenerationConfiguration.shared.route == .custom
-                ? CustomGenerationConfiguration.shared.configurationError ?? L10n.string("Generation is unavailable.")
+                ? generationAccessReason ?? L10n.string("Generation is unavailable.")
                 : account.isMisconfigured
                 ? L10n.string("AI is unavailable")
                 : account.isSigningIn ? L10n.string("Opening Google") : L10n.string("Sign in to generate")))
