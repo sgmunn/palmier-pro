@@ -119,9 +119,6 @@ struct CustomGenerationRunner: Sendable {
         guard params.imageURLs.isEmpty else {
             throw CustomGenerationError.unsupported("Reference-image generation is not supported by the custom gateway yet.")
         }
-        guard let dimensions = Self.dimensions(for: params.aspectRatio) else {
-            throw CustomGenerationError.unsupported("The custom gateway does not support this aspect ratio.")
-        }
         let response = try await client.generateImages(
             configuration: configuration,
             request: CustomImageGenerationRequest(
@@ -129,8 +126,6 @@ struct CustomGenerationRunner: Sendable {
                 prompt: params.prompt,
                 n: params.numImages,
                 aspectRatio: params.aspectRatio,
-                width: dimensions.width,
-                height: dimensions.height,
                 resolution: params.resolution,
                 quality: params.quality
             )
@@ -214,17 +209,6 @@ struct CustomGenerationRunner: Sendable {
         } catch {
             await Self.remove([staged])
             throw error
-        }
-    }
-
-    static func dimensions(for aspectRatio: String) -> (width: Int, height: Int)? {
-        switch aspectRatio {
-        case "1:1": (1024, 1024)
-        case "16:9": (1024, 576)
-        case "9:16": (576, 1024)
-        case "4:3": (1024, 768)
-        case "3:4": (768, 1024)
-        default: nil
         }
     }
 

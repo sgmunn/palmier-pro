@@ -1,41 +1,44 @@
 import { createServer as createHTTPServer } from "node:http";
 import { randomUUID } from "node:crypto";
-import {
-  configureZImageTurboWorkflow,
-  loadZImageTurboWorkflow,
-  validateZImageTurboRequest,
-  zImageTurboModelID,
-} from "./z-image-turbo.mjs";
 
 const maximumRequestBytes = 64 * 1024;
 
-export async function createGatewayServer({ apiKey, comfyClient }) {
+export async function createGatewayServer({ apiKey, comfyClient, modelRegistry }) {
   if (typeof apiKey !== "string" || !apiKey) throw new Error("Gateway API key is required.");
   if (!comfyClient) throw new Error("ComfyUI client is required.");
-  const workflowTemplate = await loadZImageTurboWorkflow();
+  if (!modelRegistry) throw new Error("Gateway model registry is required.");
 
   return createHTTPServer(async (request, response) => {
     try {
       if (request.method === "GET" && request.url === "/health") {
         return sendJSON(response, 200, { status: "ok" });
       }
-      if (request.method !== "POST" || request.url !== "/v1/images/generations") {
-        return sendError(response, 404, "not_found", "Endpoint not found.");
-      }
       if (request.headers.authorization !== `Bearer ${apiKey}`) {
         return sendError(response, 401, "unauthorized", "Invalid gateway API key.");
       }
+      if (request.method === "GET" && request.url === "/v1/palmier/models") {
+        return sendJSON(response, 200, {
+          catalogVersion: 1,
+          models: await modelRegistry.catalog(),
+        });
+      }
+      if (request.method !== "POST" || request.url !== "/v1/images/generations") {
+        return sendError(response, 404, "not_found", "Endpoint not found.");
+      }
 
       const payload = JSON.parse(await readBody(request));
-      const imageRequest = validateZImageTurboRequest(payload);
-      const workflow = configureZImageTurboWorkflow(workflowTemplate, imageRequest);
+      const prepared = await modelRegistry.prepareImage(payload);
       const controller = new AbortController();
       request.once("aborted", () => controller.abort());
-      const images = await comfyClient.generateImages(workflow, imageRequest.count, controller.signal);
+      const images = await comfyClient.generateImages(
+        prepared.workflow,
+        prepared.count,
+        controller.signal
+      );
       sendJSON(response, 200, {
         id: randomUUID(),
         object: "list",
-        model: zImageTurboModelID,
+        model: prepared.modelID,
         data: images.map((image, index) => ({ index, b64_json: image.base64 })),
       });
     } catch (error) {

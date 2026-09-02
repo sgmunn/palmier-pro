@@ -1,11 +1,11 @@
 # Custom media generation through MCP
 
 This test controls a running Palmier Pro app through its local MCP server, submits
-one custom-gateway image request, polls the placeholder, and reads the completed
-image back through `inspect_media`.
+one local Z-Image Turbo request, polls the placeholder, and reads the completed image
+back through `inspect_media`.
 
 The MCP client never reads the gateway API key. Palmier loads the key from Keychain
-and makes the Together request itself.
+and sends the request to the configured gateway.
 
 This workflow was verified on August 21, 2026 with both the repository client and a
 separate Codex task. Both produced a 16:9 asset and read it back through MCP.
@@ -14,11 +14,12 @@ separate Codex task. Both produced a 16:9 asset and read it back through MCP.
 
 1. Build and open the current Palmier Pro app.
 2. Open or create a disposable project and leave that project frontmost.
-3. In Settings > Models, select Custom Gateway and configure:
-   - Gateway URL: `https://api.together.ai/v1`
-   - Image Model ID: `black-forest-labs/FLUX.2-dev`
-   - API key: a saved Together key
-4. In Settings > Agent, enable MCP Server. Palmier listens only on
+3. Start the ComfyUI gateway and confirm it advertises `local/z-image-turbo`.
+4. In Settings > Models, select Custom Gateway and configure:
+   - Gateway URL: `http://127.0.0.1:8190`
+   - API key: the gateway bearer token
+5. Click Refresh after changing any gateway model descriptor.
+6. In Settings > Agent, enable MCP Server. Palmier listens only on
    `http://127.0.0.1:19789/mcp`.
 
 ## Check the connection without generating
@@ -30,7 +31,7 @@ node scripts/mcp/test-custom-image.mjs --check
 ```
 
 This initializes an MCP session, discovers the required tools, binds to the
-frontmost project, and confirms `custom/image/default` is available. It does not
+frontmost project, and confirms `local/z-image-turbo` is available. It does not
 make a billable generation request.
 
 If more than one project is open, target one explicitly:
@@ -45,16 +46,16 @@ or:
 node scripts/mcp/test-custom-image.mjs --check --project-path "/absolute/path/MCP Test.palmier"
 ```
 
-## Run the paid end-to-end test
+## Run the end-to-end test
 
 ```bash
 node scripts/mcp/test-custom-image.mjs
 ```
 
-The script shows the target project and asks before making one billable request.
+The script shows the target project and asks before making the generation request.
 It then:
 
-1. calls `generate_image` with `custom/image/default`;
+1. calls `generate_image` with `local/z-image-turbo`;
 2. extracts the returned placeholder asset ID;
 3. polls that ID with `get_media` until `generationStatus` disappears or fails;
 4. calls `inspect_media` and requires an image response.
@@ -71,11 +72,11 @@ Useful options:
 ```bash
 node scripts/mcp/test-custom-image.mjs \
   --prompt "A locked-off wide shot of waves striking a black basalt coast" \
-  --name "MCP Together verification" \
+  --name "MCP Z-Image verification" \
   --aspect-ratio "16:9"
 ```
 
-Use `--yes` only in an intentional non-interactive run. It bypasses the billing
+Use `--yes` only in an intentional non-interactive run. It bypasses the generation
 confirmation.
 
 ## Control Palmier from Codex
@@ -101,14 +102,12 @@ workflow.
 
 ## Verify text-to-speech through MCP
 
-In Settings > Models, leave Custom Gateway selected, set Audio Model ID to
-`hexgrad/Kokoro-82M`, and confirm Audio Voice IDs contains `af_alloy`. Voice IDs are
-comma-separated and the first configured voice is the default. Then start a new Codex
-task and ask:
+After the gateway advertises an audio model, use the returned stable ID and one of
+its advertised voices. Then start a new Codex task and ask:
 
 ```text
 Use the palmier-pro MCP server. List the projects and audio models, then generate
-speech in the frontmost disposable project with custom/audio/tts and voice af_alloy.
+speech in the frontmost disposable project with the advertised audio model and voice.
 Speak: "Palmier Pro custom speech generation is working." Poll get_media until the
 asset is ready, inspect it, and report its asset ID, duration, file type,
 generationBackendID, and remoteModel. Do not place it on the timeline and do not use
@@ -116,7 +115,7 @@ any other audio generation service.
 ```
 
 The expected asset is ready audio with a waveform and an MP3 extension. Its provenance
-should report `custom-gateway` and `hexgrad/Kokoro-82M`; synchronous speech has no
+should report `custom-gateway` and the advertised stable model ID; synchronous speech has no
 backend job ID.
 
 ## Troubleshooting
@@ -126,7 +125,7 @@ backend job ID.
   `--project-path`.
 - `Custom image model is unavailable`: select Custom Gateway and wait for the model
   catalog to finish loading.
-- `Enter a gateway ...`: complete the URL, model ID, or API-key setting in Palmier.
+- `Enter a gateway ...`: complete the URL or API-key setting in Palmier.
 - `project is not active`: bring the MCP session's project window to the front and
   retry.
 - `Generation failed`: inspect the failed placeholder in Palmier or rerun

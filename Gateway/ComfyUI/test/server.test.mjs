@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { once } from "node:events";
+import { ModelRegistry } from "../src/model-registry.mjs";
 import { createGatewayServer } from "../src/server.mjs";
+
+const modelRegistry = new ModelRegistry({
+  modelsDirectoryURL: new URL("../models/", import.meta.url),
+});
 
 test("serves the Palmier image contract with bearer authentication", async (context) => {
   let receivedWorkflow;
@@ -14,6 +19,7 @@ test("serves the Palmier image contract with bearer authentication", async (cont
         return [{ base64: "AQID", contentType: "image/png" }];
       },
     },
+    modelRegistry,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -31,8 +37,6 @@ test("serves the Palmier image contract with bearer authentication", async (cont
       prompt: "A quiet harbor",
       n: 1,
       aspect_ratio: "1:1",
-      width: 1024,
-      height: 1024,
     }),
   });
   const body = await response.json();
@@ -43,10 +47,34 @@ test("serves the Palmier image contract with bearer authentication", async (cont
   assert.equal(receivedWorkflow["27"].inputs.text, "A quiet harbor");
 });
 
+test("advertises the configured model catalog", async (context) => {
+  const server = await createGatewayServer({
+    apiKey: "test-key",
+    comfyClient: { generateImages: () => assert.fail("must not generate") },
+    modelRegistry,
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address();
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/v1/palmier/models`, {
+    headers: { Authorization: "Bearer test-key" },
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.catalogVersion, 1);
+  assert.equal(body.models.length, 1);
+  assert.equal(body.models[0].id, "local/z-image-turbo");
+  assert.equal(body.models[0].displayName, "Z-Image Turbo");
+});
+
 test("rejects a missing gateway API key", async (context) => {
   const server = await createGatewayServer({
     apiKey: "test-key",
     comfyClient: { generateImages: () => assert.fail("must not generate") },
+    modelRegistry,
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");

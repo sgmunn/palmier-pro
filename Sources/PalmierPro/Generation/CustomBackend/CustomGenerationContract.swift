@@ -5,13 +5,11 @@ struct CustomImageGenerationRequest: Encodable, Sendable {
     let prompt: String
     let n: Int
     let aspectRatio: String
-    let width: Int
-    let height: Int
     let resolution: String?
     let quality: String?
 
     private enum CodingKeys: String, CodingKey {
-        case model, prompt, n, width, height, quality
+        case model, prompt, n, quality
         case aspectRatio = "aspect_ratio"
         case resolution
     }
@@ -150,7 +148,7 @@ enum CustomGenerationError: LocalizedError, Equatable {
              .videoFailed(let message): message
         case .gateway(let status, let message): "Gateway error (\(status)): \(message)"
         case .videoSubmissionTimedOut:
-            "The gateway did not acknowledge the video request. Check Together before retrying to avoid a duplicate charge."
+            "The gateway did not acknowledge the video request. Check the configured provider before retrying to avoid duplicate work or charges."
         }
     }
 }

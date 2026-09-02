@@ -152,17 +152,6 @@ private struct CustomGenerationSettings: View {
             if configuration.route == .custom {
                 TextField(L10n.string("Gateway URL"), text: $configuration.baseURLText)
                     .textFieldStyle(.roundedBorder)
-                TextField(L10n.string("Image Model ID"), text: $configuration.imageModelIDText)
-                    .textFieldStyle(.roundedBorder)
-                TextField(L10n.string("Video Model ID"), text: $configuration.videoModelIDText)
-                    .textFieldStyle(.roundedBorder)
-                TextField(L10n.string("Audio Model ID"), text: $configuration.audioModelIDText)
-                    .textFieldStyle(.roundedBorder)
-                TextField(L10n.string("Audio Voice IDs"), text: $configuration.audioVoiceIDsText)
-                    .textFieldStyle(.roundedBorder)
-                Text(L10n.string("Separate voice IDs with commas. The first voice is the default."))
-                    .font(.system(size: AppTheme.FontSize.sm))
-                    .foregroundStyle(AppTheme.Text.tertiaryColor)
                 HStack(spacing: AppTheme.Spacing.sm) {
                     SecureField(
                         configuration.hasAPIKey ? L10n.string("API key saved") : L10n.string("API key"),
@@ -181,6 +170,11 @@ private struct CustomGenerationSettings: View {
                         .buttonStyle(.capsule(.secondary, size: .regular))
                     }
                 }
+                Button(L10n.string("Refresh")) {
+                    ModelCatalog.shared.reload()
+                }
+                .buttonStyle(.capsule(.secondary, size: .regular))
+                .disabled(configuration.configurationError != nil)
                 if let error = configuration.configurationError {
                     Text(verbatim: error)
                         .font(.system(size: AppTheme.FontSize.sm))

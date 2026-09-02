@@ -28,7 +28,7 @@ Options:
   --help                 Show this help
 
 Palmier Pro must be running with MCP enabled. Configure Custom Gateway in the app
-before running this test. The Together API key remains in the app's Keychain.`);
+before running this test. The gateway API key remains in the app's Keychain.`);
 }
 
 function parseArguments(argv) {
@@ -81,7 +81,7 @@ function parseArguments(argv) {
   if (!Number.isFinite(options.pollSeconds) || options.pollSeconds <= 0) {
     throw new Error("--poll must be a positive number.");
   }
-  options.name ??= `MCP Together test ${new Date().toISOString()}`;
+  options.name ??= `MCP gateway test ${new Date().toISOString()}`;
   return options;
 }
 
@@ -228,7 +228,7 @@ async function run() {
 
   const models = await client.callTool("list_models", { type: "image" });
   const modelPayload = parseJSONToolText("list_models", models.text);
-  const customModel = modelPayload.models?.find((model) => model.id === "custom/image/default");
+  const customModel = modelPayload.models?.find((model) => model.id === "local/z-image-turbo");
   if (!customModel) {
     throw new Error("Custom image model is unavailable. Select Custom Gateway in Palmier Settings and wait for models to load.");
   }
@@ -243,7 +243,7 @@ async function run() {
   const submitted = await client.callTool("generate_image", {
     prompt: options.prompt,
     name: options.name,
-    model: "custom/image/default",
+    model: "local/z-image-turbo",
     aspectRatio: options.aspectRatio,
   });
   console.log(submitted.text);

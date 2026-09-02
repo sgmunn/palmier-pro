@@ -39,6 +39,23 @@ struct CustomGenerationClient: Sendable {
         }
     }
 
+    func fetchCatalog(
+        connection: CustomGenerationConnectionSnapshot
+    ) async throws -> [CatalogEntry] {
+        var request = URLRequest(url: connection.modelCatalogURL)
+        request.httpMethod = "GET"
+        configure(&request, apiKey: connection.apiKey)
+        let data = try await responseData(for: request)
+        do {
+            let envelope = try JSONDecoder().decode(CustomGenerationCatalogEnvelope.self, from: data)
+            return try CustomGenerationCatalog.validate(envelope)
+        } catch let error as CustomGenerationError {
+            throw error
+        } catch {
+            throw CustomGenerationError.invalidResponse("Gateway returned an invalid model catalog.")
+        }
+    }
+
     func createVideo(
         configuration: CustomGenerationConfigurationSnapshot,
         request payload: CustomVideoGenerationRequest

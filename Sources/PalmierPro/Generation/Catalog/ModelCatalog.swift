@@ -69,18 +69,24 @@ final class ModelCatalog {
         subscription = nil
         retryTask?.cancel()
         catalogTask?.cancel()
+        video = []
+        image = []
+        audio = []
+        upscale = []
+        byId = [:]
         isLoaded = false
         lastError = nil
         switch CustomGenerationConfiguration.shared.route {
         case .hosted:
             startSubscription()
         case .custom:
-            let audioVoiceIDs = CustomGenerationConfiguration.shared.audioVoiceIDs
             catalogTask = Task { [weak self] in
                 do {
-                    let entries = try await CustomGenerationCatalog.load()
+                    let connection = try await CustomGenerationConfiguration.shared.connectionSnapshot()
+                    let entries = try await CustomGenerationClient().fetchCatalog(connection: connection)
                     guard !Task.isCancelled else { return }
-                    self?.apply(entries, customAudioVoiceIDs: audioVoiceIDs)
+                    guard CustomGenerationConfiguration.shared.route == .custom else { return }
+                    self?.apply(entries)
                 } catch {
                     guard !Task.isCancelled else { return }
                     self?.lastError = error.localizedDescription
@@ -132,7 +138,7 @@ final class ModelCatalog {
         }
     }
 
-    private func apply(_ entries: [CatalogEntry], customAudioVoiceIDs: [String]? = nil) {
+    private func apply(_ entries: [CatalogEntry]) {
         var newVideo: [VideoModelConfig] = []
         var newImage: [ImageModelConfig] = []
         var newAudio: [AudioModelConfig] = []
@@ -155,9 +161,7 @@ final class ModelCatalog {
                 newImage.append(m)
                 newById[m.id] = .image(m)
             case .audio(let caps):
-                let voiceIDs = entry.id == CustomGenerationCatalog.audioModelID
-                    ? customAudioVoiceIDs : nil
-                let m = AudioModelConfig(entry: entry, caps: caps, configuredVoiceIDs: voiceIDs)
+                let m = AudioModelConfig(entry: entry, caps: caps)
                 newAudio.append(m)
                 newById[m.id] = .audio(m)
             case .upscale(let caps):

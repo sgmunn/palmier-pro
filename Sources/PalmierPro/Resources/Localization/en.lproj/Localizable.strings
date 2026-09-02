@@ -118,9 +118,7 @@
 "Aspect Ratio" = "Aspect Ratio";
 "Aspect ratio: %@" = "Aspect ratio: %@";
 "Audio" = "Audio";
-"Audio Model ID" = "Audio Model ID";
 "Audio Ref" = "Audio Ref";
-"Audio Voice IDs" = "Audio Voice IDs";
 "Audio extraction failed: %@" = "Audio extraction failed: %@";
 "Auto" = "Auto";
 "Available" = "Available";
@@ -365,10 +363,6 @@
 "Enter Full Screen" = "Enter Full Screen";
 "Enter a gateway API key." = "Enter a gateway API key.";
 "Enter a valid gateway URL." = "Enter a valid gateway URL.";
-"Enter a video model ID." = "Enter a video model ID.";
-"Enter an audio model ID." = "Enter an audio model ID.";
-"Enter an image model ID." = "Enter an image model ID.";
-"Enter at least one audio voice ID." = "Enter at least one audio voice ID.";
 "Estimated cost. Actual billing may differ slightly." = "Estimated cost. Actual billing may differ slightly.";
 "Exclusion" = "Exclusion";
 "Expand" = "Expand";
@@ -491,7 +485,6 @@
 "Ignores speech-free pauses shorter than this." = "Ignores speech-free pauses shorter than this.";
 "Image" = "Image";
 "Image Adjustment" = "Image Adjustment";
-"Image Model ID" = "Image Model ID";
 "Image Ref" = "Image Ref";
 "Import" = "Import";
 "Import Media" = "Import Media";
@@ -874,7 +867,6 @@
 "Send only the visible clip range to the model, not the full source." = "Send only the visible clip range to the model, not the full source.";
 "Send usage data from your interactions with Palmier Pro to help improve the app." = "Send usage data from your interactions with Palmier Pro to help improve the app.";
 "Sending…" = "Sending…";
-"Separate voice IDs with commas. The first voice is the default." = "Separate voice IDs with commas. The first voice is the default.";
 "Sequence" = "Sequence";
 "Server URL" = "Server URL";
 "Set as first frame" = "Set as first frame";
@@ -1080,7 +1072,6 @@
 "Vertical workspace layout" = "Vertical workspace layout";
 "Vibrance" = "Vibrance";
 "Video" = "Video";
-"Video Model ID" = "Video Model ID";
 "Video Ref" = "Video Ref";
 "Video automation" = "Video automation";
 "Video editor" = "Video editor";

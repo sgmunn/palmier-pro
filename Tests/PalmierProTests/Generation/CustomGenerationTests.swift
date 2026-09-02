@@ -14,7 +14,10 @@ private final class CustomGenerationTestURLProtocol: URLProtocol {
         }
         let data: Data
         let status: Int
-        if request.httpMethod == "POST", url.path == "/v2/videos" {
+        if request.httpMethod == "GET", url.path == "/v1/palmier/models" {
+            data = Data(#"{"catalogVersion":1,"models":[{"id":"local/z-image-turbo","kind":"image","displayName":"Z-Image Turbo","providerName":"Local ComfyUI","description":"Local image generation.","allowedEndpoints":["image"],"responseShape":"images","uiCapabilities":{"resolutions":null,"aspectRatios":["1:1","16:9"],"qualities":null,"supportsImageReference":false,"maxImages":4},"paidOnly":false}]}"#.utf8)
+            status = 200
+        } else if request.httpMethod == "POST", url.path == "/v2/videos" {
             data = Data(#"{"id":"job-1","model":"runware:123@1","status":"queued"}"#.utf8)
             status = 200
         } else if request.httpMethod == "POST", url.path == "/v1/audio/speech" {
@@ -56,22 +59,9 @@ private final class TimedOutCustomGenerationTestURLProtocol: URLProtocol {
 
 @Suite("Custom generation", .serialized)
 struct CustomGenerationTests {
-    @Test("Fresh custom configuration uses a serverless image model")
-    func defaultImageModel() {
-        #expect(CustomGenerationConfiguration.defaultImageModelID == "black-forest-labs/FLUX.2-dev")
-    }
-
-    @Test("Fresh custom configuration uses a serverless speech model")
-    func defaultAudioModel() {
-        #expect(CustomGenerationConfiguration.defaultAudioModelID == "hexgrad/Kokoro-82M")
-        #expect(CustomGenerationConfiguration.defaultAudioVoiceIDs == ["af_alloy", "af_bella", "af_heart"])
-    }
-
-    @Test("Configured audio voices are trimmed and deduplicated in order")
-    func configuredAudioVoiceParsing() {
-        #expect(CustomGenerationConfiguration.parseAudioVoiceIDs(
-            " voice-one,voice-two\nvoice-one, , voice-three "
-        ) == ["voice-one", "voice-two", "voice-three"])
+    @Test("Fresh custom configuration targets the local gateway")
+    func defaultGatewayURL() {
+        #expect(CustomGenerationConfiguration.defaultBaseURL == "http://127.0.0.1:8190")
     }
 
     @Test("A removed audio voice selects the new configured default")
@@ -105,6 +95,7 @@ struct CustomGenerationTests {
         )
 
         #expect(configuration.imageGenerationsURL.absoluteString == expected)
+        #expect(configuration.connection.modelCatalogURL.absoluteString == "https://api.together.ai/v1/palmier/models")
     }
 
     @Test(
@@ -167,66 +158,55 @@ struct CustomGenerationTests {
         #expect(required == ["prompt", "aspectRatio"])
     }
 
-    @Test("Bundled catalog maps the custom image model")
-    func bundledCatalog() async throws {
-        let entries = try await CustomGenerationCatalog.load()
-        let entry = try #require(entries.first { $0.id == CustomGenerationCatalog.imageModelID })
+    @Test("Gateway catalog advertises the selectable image model")
+    func gatewayCatalog() async throws {
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [CustomGenerationTestURLProtocol.self]
+        let session = URLSession(configuration: sessionConfiguration)
+        defer { session.invalidateAndCancel() }
+        let entries = try await CustomGenerationClient(
+            session: session,
+            requestTimeout: 3
+        ).fetchCatalog(connection: CustomGenerationConnectionSnapshot(
+            baseURL: try #require(URL(string: "https://gateway.example")),
+            apiKey: "test-key"
+        ))
+        let entry = try #require(entries.first)
 
-        #expect(entries.count == 3)
-        #expect(entry.id == "custom/image/default")
+        #expect(entries.count == 1)
+        #expect(entry.id == "local/z-image-turbo")
+        #expect(entry.displayName == "Z-Image Turbo")
         guard case .image(let capabilities) = entry.uiCapabilities else {
             Issue.record("Expected image capabilities")
             return
         }
         #expect(capabilities.supportsImageReference == false)
         #expect(capabilities.maxImages == 4)
+    }
 
-        let video = try #require(entries.first { $0.id == CustomGenerationCatalog.videoModelID })
-        guard case .video(let videoCapabilities) = video.uiCapabilities else {
-            Issue.record("Expected video capabilities")
-            return
-        }
-        #expect(videoCapabilities.durations == [10])
-        #expect(videoCapabilities.resolutions == ["768p"])
-        #expect(videoCapabilities.aspectRatios == ["16:9"])
-        #expect(videoCapabilities.supportsFirstFrame)
-        #expect(!videoCapabilities.supportsLastFrame)
-
-        let audio = try #require(entries.first { $0.id == CustomGenerationCatalog.audioModelID })
-        guard case .audio(let audioCapabilities) = audio.uiCapabilities else {
-            Issue.record("Expected audio capabilities")
-            return
-        }
-        #expect(audioCapabilities.category == "tts")
-        #expect(audioCapabilities.voices == nil)
-        #expect(audioCapabilities.defaultVoice == nil)
-        #expect(audioCapabilities.inputs == ["text"])
-        #expect(audioCapabilities.maxReferenceImages == 0)
-        #expect(audioCapabilities.maxReferenceAudios == 0)
-
-        let configuredAudio = AudioModelConfig(
-            entry: audio,
-            caps: audioCapabilities,
-            configuredVoiceIDs: ["voice-one", "voice-two"]
+    @Test("Gateway catalog rejects unsupported versions")
+    func unsupportedGatewayCatalogVersion() throws {
+        let envelope = try JSONDecoder().decode(
+            CustomGenerationCatalogEnvelope.self,
+            from: Data(#"{"catalogVersion":2,"models":[]}"#.utf8)
         )
-        #expect(configuredAudio.voices == ["voice-one", "voice-two"])
-        #expect(configuredAudio.defaultVoice == "voice-one")
-        #expect(configuredAudio.validate(params: AudioGenerationParams(
-            prompt: "Testing speech",
-            voice: "voice-two",
-            lyrics: nil,
-            styleInstructions: nil,
-            instrumental: false,
-            durationSeconds: nil
-        )) == nil)
-        #expect(configuredAudio.validate(params: AudioGenerationParams(
-            prompt: "Testing speech",
-            voice: nil,
-            lyrics: nil,
-            styleInstructions: nil,
-            instrumental: false,
-            durationSeconds: nil
-        )) == "Choose a voice.")
+
+        #expect(throws: CustomGenerationError.self) {
+            try CustomGenerationCatalog.validate(envelope)
+        }
+    }
+
+    @Test("Gateway catalog rejects duplicate stable IDs")
+    func duplicateGatewayCatalogIDs() throws {
+        let model = #"{"id":"local/z-image-turbo","kind":"image","displayName":"Z-Image Turbo","allowedEndpoints":["image"],"responseShape":"images","uiCapabilities":{"resolutions":null,"aspectRatios":["1:1"],"qualities":null,"supportsImageReference":false,"maxImages":1},"paidOnly":false}"#
+        let envelope = try JSONDecoder().decode(
+            CustomGenerationCatalogEnvelope.self,
+            from: Data("{\"catalogVersion\":1,\"models\":[\(model),\(model)]}".utf8)
+        )
+
+        #expect(throws: CustomGenerationError.self) {
+            try CustomGenerationCatalog.validate(envelope)
+        }
     }
 
     @Test("Speech request uses the OpenAI-compatible field names")
@@ -332,7 +312,7 @@ struct CustomGenerationTests {
         await #expect(throws: CancellationError.self) { try await task.value }
     }
 
-    @Test("Video request uses the Together v2 field names")
+    @Test("Video request uses the gateway v2 field names")
     func videoRequestEncoding() throws {
         let request = CustomVideoGenerationRequest(
             model: "minimax/hailuo-02",
@@ -528,7 +508,7 @@ struct CustomGenerationTests {
     func failedCustomJobIsRetryable() {
         var input = GenerationInput(
             prompt: "Test",
-            model: CustomGenerationCatalog.videoModelID,
+            model: "local/ltx-2.5-distilled",
             duration: 10,
             aspectRatio: "16:9"
         )
@@ -553,8 +533,6 @@ struct CustomGenerationTests {
             prompt: "A quiet harbor",
             n: 2,
             aspectRatio: "16:9",
-            width: 1024,
-            height: 576,
             resolution: "1920x1080",
             quality: "high"
         )
@@ -566,8 +544,8 @@ struct CustomGenerationTests {
         #expect(object["prompt"] as? String == "A quiet harbor")
         #expect(object["n"] as? Int == 2)
         #expect(object["aspect_ratio"] as? String == "16:9")
-        #expect(object["width"] as? Int == 1024)
-        #expect(object["height"] as? Int == 576)
+        #expect(object["width"] == nil)
+        #expect(object["height"] == nil)
         #expect(object["resolution"] as? String == "1920x1080")
         #expect(object["quality"] as? String == "high")
     }
@@ -578,22 +556,6 @@ struct CustomGenerationTests {
 
         #expect(client.imageGenerationTimeout == 20 * 60)
         #expect(client.requestTimeout == 30)
-    }
-
-    @Test(
-        "Custom image dimensions match catalog aspect ratios",
-        arguments: [
-            ("1:1", 1024, 1024),
-            ("16:9", 1024, 576),
-            ("9:16", 576, 1024),
-            ("4:3", 1024, 768),
-            ("3:4", 768, 1024),
-        ]
-    )
-    func customImageDimensions(aspectRatio: String, width: Int, height: Int) throws {
-        let dimensions = try #require(CustomGenerationRunner.dimensions(for: aspectRatio))
-        #expect(dimensions.width == width)
-        #expect(dimensions.height == height)
     }
 
     @Test("Image response accepts URL and base64 outputs")
@@ -608,13 +570,13 @@ struct CustomGenerationTests {
 
     @Test("Generation input persists backend identity and model mapping")
     func generationInputPersistence() throws {
-        var input = GenerationInput(prompt: "Test", model: "custom/image/default", duration: 0, aspectRatio: "1:1")
+        var input = GenerationInput(prompt: "Test", model: "local/z-image-turbo", duration: 0, aspectRatio: "1:1")
         input.generationBackendID = GenerationRoute.custom.rawValue
-        input.remoteModel = "flux-schnell"
+        input.remoteModel = "local/z-image-turbo"
 
         let restored = try JSONDecoder().decode(GenerationInput.self, from: JSONEncoder().encode(input))
 
         #expect(restored.generationBackendID == GenerationRoute.custom.rawValue)
-        #expect(restored.remoteModel == "flux-schnell")
+        #expect(restored.remoteModel == "local/z-image-turbo")
     }
 }

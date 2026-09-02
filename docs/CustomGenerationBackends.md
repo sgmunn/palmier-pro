@@ -35,16 +35,20 @@ proven. This keeps every phase usable end to end.
 The first self-hosted gateway implementation targets ComfyUI while preserving the
 existing Together-compatible app contract. Palmier Pro must not submit workflow
 graphs or depend on ComfyUI node IDs. The gateway owns workflow templates, parameter
-injection, ComfyUI queue execution, output collection, and provider-specific errors.
+injection, model discovery, ComfyUI queue execution, output collection, and
+provider-specific errors. Palmier Hosted remains a separate route and does not pass
+through the custom gateway.
 
 ```text
 Palmier Pro
+  |  GET  /v1/palmier/models
   |  POST /v1/images/generations
   |  POST /v1/audio/speech
   |  POST /v2/videos
   |  GET  /v2/videos/{id}
   v
 ComfyUI gateway
+  |  load catalog and execution descriptors from disk
   |  select workflow by stable model ID
   |  inject validated request values
   |  submit /prompt and inspect queue/history/output
@@ -67,11 +71,24 @@ a selected local model to a billable provider or from one model to another. An
 unavailable model fails with its requested stable ID, and completed generation
 metadata preserves the actual model and backend used.
 
-The image catalog must grow from the current single `custom/image/default` entry to
-multiple selectable stable model entries. Model selection belongs to the shared
-catalog and submission path so the panel and Agent/MCP tools expose the same choices.
-The request `model` value selects the gateway workflow; separate per-model endpoints
-or Swift vendor clients are not required.
+The gateway advertises selectable stable model entries through
+`GET /v1/palmier/models`. Palmier decodes those entries into its shared catalog so
+the panel and Agent/MCP tools expose the same choices. The request `model` value is
+the advertised stable ID and selects the gateway workflow; separate per-model
+endpoints, Swift vendor clients, and per-media model settings are not required.
+
+Gateway `.model.json` descriptors own both the Palmier catalog entry and the
+execution mapping. They declare the workflow path, output dimensions, and ComfyUI
+node-input bindings. The gateway reads descriptors and workflow JSON for every
+catalog and generation request. A user can therefore add a model, change its
+capabilities, or replace a workflow and then refresh Palmier's model list without
+rebuilding or restarting either process. Duplicate IDs, malformed bindings, and
+unsupported execution kinds fail explicitly.
+
+The current generic executor supports image descriptors. Adding LTX 2.5 requires
+one video executor and the existing asynchronous `/v2/videos` lifecycle; after that
+engine exists, individual LTX workflow variants can be added and changed through
+descriptors without rebuilding Palmier Pro or the gateway.
 
 Z-Image Turbo is the first implementation slice. It remains text-to-image only and
 supports the five aspect ratios already accepted by the custom image contract. The
@@ -98,12 +115,17 @@ are verification inputs, not hardcoded product paths or minimum requirements.
 
 ## Implementation status
 
-Status as of September 1, 2026 on `fork/custom-providers`:
+Status as of September 2, 2026 on `fork/custom-providers`:
 
-- Phase 1 text-to-image is implemented. The selected route, gateway URL, and remote
-  model ID are persisted in settings; the API key is stored in Keychain.
-- The custom route loads a bundled image-only catalog, bypasses Palmier account and
-  credit requirements, and remains available in a signed-out or unconfigured build.
+- The selected route and gateway URL are persisted in settings; the API key is
+  stored in Keychain. The custom URL defaults to `http://127.0.0.1:8190`.
+- The custom route loads its versioned catalog from the gateway, bypasses Palmier
+  account and credit requirements, and remains available in a signed-out or
+  unconfigured build.
+- Palmier sends the advertised stable model ID unchanged and persists it in
+  `GenerationInput`. Image dimensions and ComfyUI bindings belong to the gateway.
+- Gateway model descriptors and workflows hot-load from disk. Settings exposes a
+  manual Refresh action for catalog changes.
 - `GenerationService` routes custom image requests through the gateway client and
   reuses the existing placeholder, project-package commit, and media finalization
   lifecycle.
@@ -118,21 +140,19 @@ Status as of September 1, 2026 on `fork/custom-providers`:
 
 Verified so far:
 
-- focused custom-generation tests pass for catalog loading, access, endpoint
-  resolution, request encoding, response decoding, aspect-ratio dimensions, MCP
+- focused custom-generation tests pass for catalog discovery, access, endpoint
+  resolution, request encoding, response decoding, MCP
   schema, and persisted routing metadata;
 - a mock gateway generated an asset that remained usable after saving and reopening
   the project;
 - the user verified a real Together serverless request with
   `black-forest-labs/FLUX.1-schnell` and the generated asset completed successfully;
-- new configurations default to the current serverless image model
-  `black-forest-labs/FLUX.2-dev`;
 - the repository MCP client generated a Together image, polled it to completion,
   verified its requested 16:9 pixel dimensions, and read the asset back through
   `inspect_media`;
 - a separate Codex task discovered and used the Palmier MCP tools to complete the
   same 16:9 generation and read-back workflow;
-- the packaged app contains the custom catalog and passes signature verification.
+- the gateway catalog and Z-Image workflow descriptor pass gateway contract tests.
 - custom video generation completed through the panel and MCP with persisted backend,
   remote-model, and provider-job provenance visible through `inspect_media`.
 
@@ -174,7 +194,7 @@ GenerationView+Submit               ToolExecutor+Generate
 | UI intent | `Generation/UI/GenerationView+Submit.swift` | Builds the same submission types used by tools. Provider logic does not belong here. |
 | Agent/MCP intent | `Agent/Tools/ToolExecutor+Generate.swift` | Validates tool arguments, applies the shared hosted-or-custom access policy, then calls the shared submission types. |
 | Request assembly | `Generation/Submission/*GenerationSubmission.swift` | Converts user-facing model settings and references into `BackendGenerationParams`. This should remain shared. |
-| Model capabilities | `Generation/Catalog/ModelCatalog.swift` and the four model config files | The UI and tools validate against this catalog. Hosted mode uses the Convex `models:list` subscription; custom mode loads the bundled custom catalog. |
+| Model capabilities | `Generation/Catalog/ModelCatalog.swift` and the four model config files | The UI and tools validate against this catalog. Hosted mode uses the Convex `models:list` subscription; custom mode loads the gateway's versioned Palmier catalog. |
 | Placeholder and result lifecycle | `Generation/GenerationService.swift` | Creates media placeholders, prepares references, persists job metadata, monitors jobs, downloads results, finalizes assets, and resumes work after reopening. This must remain the lifecycle owner. |
 | Generation transport | `Generation/GenerationBackend.swift` and `Generation/CustomBackend/CustomGenerationRunner.swift` | Convex remains the hosted transport; the custom route is isolated in the gateway runner. |
 | Hosted uploads | `Backend/BackendStorage.swift` | Requests a Convex upload ticket, uploads a file, and commits it to hosted storage. |
@@ -213,7 +233,6 @@ It owns:
 
 - selected route: hosted or custom gateway;
 - gateway base URL;
-- remote model ID for the current image-only slice;
 - API key reference, with the secret stored in Keychain;
 - connection state and a user-visible configuration error.
 
@@ -226,36 +245,27 @@ Never infer a route from whether the Palmier backend happens to be configured.
 Selection is explicit and persisted. Never send a custom request to the hosted path
 as a fallback after an error.
 
-### 2. One catalog source at a time
+### 2. One authoritative catalog source at a time
 
-Add:
+The custom gateway returns a versioned Palmier catalog from
+`GET /v1/palmier/models`. This is deliberately richer than a generic OpenAI
+`/v1/models` response: every entry includes duration buckets, reference limits,
+first/last-frame support, source-media rules, voices, languages, and the other
+capabilities Palmier validates before creating placeholders.
 
-```text
-Generation/CustomBackend/CustomGenerationCatalog.swift
-Resources/GenerationCatalog/custom-generation-models.json
-```
-
-The bundled catalog decodes to the existing `CatalogEntry` type so the model config
-and validation code remains unchanged. The current custom entry has:
-
-- a stable app ID, currently `custom/image/default`;
-- image, video, audio, or upscale capabilities expressed in the existing schema;
-- a remote model ID supplied by settings and snapshotted into `GenerationInput` when
-  the request runs.
-
-Do not rely on a generic `/models` response for capabilities. A model list rarely
-describes duration buckets, reference limits, first/last-frame support, source media,
-voices, languages, or other validation rules Palmier needs before mutation. The
-bundled catalog is the source of truth; gateway discovery may confirm availability
-but must not invent permissive capabilities.
+The response decodes to the existing `CatalogEntry` type, keeping UI and Agent/MCP
+validation on the same source of truth. Palmier rejects unknown catalog versions,
+duplicate or empty IDs, and unsupported custom model kinds. It never combines
+hosted and custom catalogs.
 
 `ModelCatalog.configure()` gets one routing branch:
 
 - hosted selected: run the existing Convex subscription unchanged;
-- custom selected: load and apply the bundled custom entries.
+- custom selected: authenticate to the gateway, fetch its catalog, and apply the
+  advertised entries.
 
-Keep custom parsing and ID mapping out of `ModelCatalog.swift`. That file should only
-choose a source and apply entries.
+The advertised ID is both Palmier's catalog ID and the request `model` value. There
+is no second per-media model mapping in app settings.
 
 ### 3. One access policy
 
@@ -440,8 +450,9 @@ The reference fork's own design notes are useful context:
 
 ### Phase 1: text-to-image — implemented
 
-- [x] Add custom configuration, editable model ID, and Keychain storage.
-- [x] Load a bundled image-only catalog when custom is selected.
+- [x] Add custom gateway URL configuration and Keychain storage.
+- [x] Load the gateway-advertised catalog when custom is selected.
+- [x] Hot-load gateway model descriptors and ComfyUI workflows from disk.
 - [x] Centralize access checks across the panel, tools, and related generation
   surfaces.
 - [x] Implement text-to-image with URL and base64 responses.
@@ -468,10 +479,9 @@ Dedicated-endpoint management is not part of this phase.
 
 Phase 2 implements:
 
-1. **Per-media remote model configuration.** Explicit image and video model IDs
-   replace the single generic setting. The selected video model is snapshotted into
-   `GenerationInput.remoteModel`, so changing settings later does not retarget an
-   accepted job.
+1. **Stable advertised model identity.** The selected gateway catalog ID is
+   snapshotted into `GenerationInput.remoteModel`, so later catalog changes do not
+   retarget an accepted job.
 2. **One conservative video catalog entry.** The catalog describes only the durations,
    resolutions, aspect ratios, audio behavior, and input modes actually supported by
    the first Together model. It exposes text-to-video and one starting frame, but no
@@ -521,10 +531,8 @@ Together. Phase 2 is complete.
 ### Phase 3: audio — complete
 
 - [x] Add one text-to-speech catalog entry using the existing audio submission path.
-- [x] Add an independent audio model setting, defaulting to the current Together
-  serverless `hexgrad/Kokoro-82M` model.
-- [x] Make the ordered voice list configurable in settings; use the first configured
-  voice as the default for both the panel and MCP.
+- [x] Represent text-to-speech capabilities and ordered voices in the shared catalog
+  contract used by the panel and MCP.
 - [x] Send the OpenAI-compatible `POST /v1/audio/speech` request with explicit model,
   input, voice, and response format.
 - [x] Preserve the returned supported content type and file extension during staging
@@ -633,13 +641,16 @@ rebase semantically.
 
 ## Resolved decisions and next choice
 
-Phase 1 resolved the original decisions:
+The current design decisions are:
 
-1. the gateway uses a user-editable base URL and bearer authentication;
-2. image generation uses the OpenAI-compatible `/v1/images/generations` shape;
-3. the first verified model is `black-forest-labs/FLUX.1-schnell`;
-4. custom selection exclusively replaces hosted generation and never falls back;
-5. URL, remote model ID, and API key are user-configurable, with the key in Keychain.
+1. Palmier Hosted and Custom Gateway remain separate explicit routes;
+2. the gateway uses a user-editable base URL and bearer authentication, defaulting
+   the custom URL to `http://127.0.0.1:8190`;
+3. the gateway advertises complete Palmier model capabilities and owns workflow and
+   provider configuration;
+4. the app sends advertised stable IDs unchanged and persists the executed identity;
+5. image generation uses the OpenAI-compatible `/v1/images/generations` shape;
+6. custom selection exclusively replaces hosted generation and never falls back.
 
 Phase 2 uses `minimax/hailuo-02` from Together's current
 [serverless catalog](https://docs.together.ai/docs/serverless/models). The bundled

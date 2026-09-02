@@ -1,0 +1,38 @@
+{
+  "catalog": {
+    "id": "local/z-image-turbo",
+    "kind": "image",
+    "displayName": "Z-Image Turbo",
+    "providerName": "Local ComfyUI",
+    "description": "Fast local text-to-image generation with Z-Image Turbo.",
+    "allowedEndpoints": ["image"],
+    "responseShape": "images",
+    "uiCapabilities": {
+      "resolutions": null,
+      "aspectRatios": ["1:1", "16:9", "9:16", "4:3", "3:4"],
+      "qualities": null,
+      "supportsImageReference": false,
+      "maxImages": 4
+    },
+    "paidOnly": false
+  },
+  "execution": {
+    "engine": "comfy-image",
+    "workflow": "../workflows/z-image-turbo-api.json",
+    "maximumPromptLength": 10000,
+    "dimensions": {
+      "1:1": [1024, 1024],
+      "16:9": [1024, 576],
+      "9:16": [576, 1024],
+      "4:3": [1024, 768],
+      "3:4": [768, 1024]
+    },
+    "bindings": {
+      "prompt": { "node": "27", "input": "text" },
+      "width": { "node": "13", "input": "width" },
+      "height": { "node": "13", "input": "height" },
+      "batchSize": { "node": "13", "input": "batch_size" },
+      "seed": { "node": "3", "input": "seed" }
+    }
+  }
+}

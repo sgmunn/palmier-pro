@@ -1,4 +1,6 @@
+import { pathToFileURL } from "node:url";
 import { ComfyClient } from "./comfy-client.mjs";
+import { ModelRegistry } from "./model-registry.mjs";
 import { createGatewayServer } from "./server.mjs";
 
 const apiKey = process.env.PALMIER_GATEWAY_API_KEY;
@@ -11,10 +13,14 @@ const timeoutMilliseconds = parsePositiveInteger(
   process.env.PALMIER_COMFY_TIMEOUT_MS ?? String(15 * 60 * 1000),
   "PALMIER_COMFY_TIMEOUT_MS"
 );
+const modelsDirectoryURL = process.env.PALMIER_GATEWAY_MODELS_DIR
+  ? pathToFileURL(process.env.PALMIER_GATEWAY_MODELS_DIR)
+  : new URL("../models/", import.meta.url);
 
 const server = await createGatewayServer({
   apiKey,
   comfyClient: new ComfyClient({ baseURL: comfyURL, timeoutMilliseconds }),
+  modelRegistry: new ModelRegistry({ modelsDirectoryURL }),
 });
 
 server.listen(port, host, () => {

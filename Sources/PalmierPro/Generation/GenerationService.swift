@@ -101,7 +101,9 @@ final class GenerationService {
                                 "Reference-image generation is not supported by the custom gateway yet."
                             )
                         }
-                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(for: .image)
+                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(
+                            modelID: finalInput.model
+                        )
                         finalInput.remoteModel = configuration.modelID
                         persistCustomInput(finalInput, placeholders: placeholders, editor: editor)
                         editor.onProjectCheckpointRequired?()
@@ -129,7 +131,9 @@ final class GenerationService {
                         guard case .video(let videoParams) = buildParams(prepared.delivered) else {
                             throw CustomGenerationError.unsupported("Invalid custom video request.")
                         }
-                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(for: .video)
+                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(
+                            modelID: finalInput.model
+                        )
                         let runner = CustomGenerationRunner()
                         let receipt = try await runner.acceptVideo(
                             configuration: configuration,
@@ -160,7 +164,9 @@ final class GenerationService {
                                 "The custom speech model does not accept source or reference media."
                             )
                         }
-                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(for: .audio)
+                        let configuration = try await CustomGenerationConfiguration.shared.snapshot(
+                            modelID: finalInput.model
+                        )
                         finalInput.remoteModel = configuration.modelID
                         persistCustomInput(finalInput, placeholders: placeholders, editor: editor)
                         editor.onProjectCheckpointRequired?()
