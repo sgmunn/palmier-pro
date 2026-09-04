@@ -13,6 +13,12 @@ Requirements:
 - `qwen_3_4b.safetensors` in ComfyUI `text_encoders`;
 - `ae.safetensors` in ComfyUI `vae`.
 
+For LTX 2.5 video generation, ComfyUI also needs:
+
+- `ltx-2.5-22b-distilled-transformer-comfy-int8-convrot.safetensors` in `diffusion_models`;
+- `gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors` in `text_encoders`;
+- `ltx-2.5-video-vae-conv-bf16.safetensors` and `ltx-2.5-audio-vae-bf16.safetensors` in `vae`.
+
 Start the gateway with a local bearer token:
 
 ```bash
@@ -44,10 +50,13 @@ ID and point it to an API-format ComfyUI workflow. The descriptor and workflow a
 re-read on the next refresh or generation request. Invalid descriptors fail the
 catalog request; unsupported model IDs fail rather than falling back.
 
-The descriptor executor currently supports image workflows. Video and audio model
-entries must not be advertised until their gateway executors are implemented; once
-the LTX video executor exists, its workflow variants can use the same hot-loaded
-descriptor model.
+The descriptor executors support image workflows and asynchronous video workflows.
+The LTX descriptor accepts Palmier's 5-second, 768p, 16:9 text-to-video request,
+renders 121 frames at 24 fps, and exposes the completed MP4 through the gateway's
+`/v2/videos` job lifecycle. An optional first-frame image selects the LTX
+image-to-video workflow; the gateway uploads it to ComfyUI and binds the returned
+input path before submission. Audio generation is not advertised or accepted.
+Audio model entries must not be advertised until their executor exists.
 
 The gateway binds to localhost unless `PALMIER_GATEWAY_HOST` is set. Optional
 configuration:

@@ -1,0 +1,62 @@
+{
+  "catalog": {
+    "id": "local/ltx-2.5-distilled",
+    "kind": "video",
+    "displayName": "LTX 2.5 Distilled",
+    "providerName": "Local ComfyUI",
+    "description": "Local five-second text-to-video generation with LTX 2.5 Distilled.",
+    "allowedEndpoints": ["video"],
+    "responseShape": "video",
+    "uiCapabilities": {
+      "supportsPrompt": true,
+      "supportsAudioGeneration": false,
+      "durations": [5],
+      "resolutions": ["768p"],
+      "aspectRatios": ["16:9"],
+      "supportsFirstFrame": true,
+      "supportsLastFrame": false,
+      "maxReferenceImages": 0,
+      "maxReferenceVideos": 0,
+      "maxReferenceAudios": 0,
+      "framesAndReferencesExclusive": false,
+      "referenceTagNoun": "Reference",
+      "requiresSourceVideo": false,
+      "requiresReferenceImage": false,
+      "requiresReferenceAudio": false
+    },
+    "paidOnly": false
+  },
+  "execution": {
+    "engine": "comfy-video",
+    "workflows": {
+      "text": "../workflows/ltx-2.5-t2v-api.json",
+      "firstFrame": "../workflows/ltx-2.5-i2v-api.json"
+    },
+    "maximumPromptLength": 10000,
+    "requestDimensions": {
+      "1366x768": [1376, 768]
+    },
+    "durationFrames": {
+      "5": 121
+    },
+    "frameRate": 24,
+    "bindings": {
+      "prompt": { "node": "5", "input": "text" },
+      "width": { "node": "8", "input": "width" },
+      "height": { "node": "8", "input": "height" },
+      "frameCount": [
+        { "node": "8", "input": "length" },
+        { "node": "9", "input": "frames_number" }
+      ],
+      "frameRate": [
+        { "node": "7", "input": "frame_rate" },
+        { "node": "9", "input": "frame_rate" },
+        { "node": "19", "input": "fps" }
+      ],
+      "outputWidth": { "node": "21", "input": "width" },
+      "outputHeight": { "node": "21", "input": "height" },
+      "inputImage": { "node": "22", "input": "image" },
+      "seed": { "node": "11", "input": "noise_seed" }
+    }
+  }
+}

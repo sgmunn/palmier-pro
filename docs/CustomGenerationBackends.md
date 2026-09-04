@@ -62,7 +62,7 @@ The initial local model set is:
 | --- | --- | --- | --- |
 | Image | `local/z-image-turbo` | Z-Image Turbo text-to-image | Fast default image generation |
 | Image | `local/flux-2-dev` | FLUX.2 Dev text-to-image | Optional higher-cost local image generation |
-| Video | `local/ltx-2.5-distilled` | LTX 2.5 distilled text-to-video or image-to-video | Local ten-second video generation |
+| Video | `local/ltx-2.5-distilled` | LTX 2.5 distilled text-to-video | Local five-second video generation |
 | Audio | `local/kokoro-82m` | Kokoro 82M text-to-speech | Local configured-voice speech generation |
 
 The gateway may later expose explicit cloud-backed model IDs, such as a Together
@@ -101,7 +101,7 @@ gateway request, UI, Agent/MCP schema, persistence, and undo-neutral generation
 lifecycle support the same explicit contract. FLUX.2 capability alone is not a
 reason to accept and then drop reference inputs.
 
-LTX 2.5 maps Palmier's ten-second video request to 241 frames at 24 fps. Its input
+LTX 2.5 maps Palmier's five-second video request to 121 frames at 24 fps. Its input
 dimensions must be divisible by 32, so the workflow may render 1376x768 and
 center-crop to the requested 1366x768 output. A starting frame selects the
 image-to-video workflow; otherwise the gateway selects text-to-video. The first
