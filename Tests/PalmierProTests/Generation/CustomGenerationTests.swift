@@ -492,7 +492,7 @@ struct CustomGenerationTests {
             ),
             params: VideoGenerationParams(
                 prompt: "A quiet harbor",
-                duration: 10,
+                duration: 5,
                 aspectRatio: "16:9",
                 resolution: "768p",
                 generateAudio: false

@@ -30,8 +30,8 @@ struct CustomGenerationRunner: Sendable {
                 "The custom video model supports text and one starting frame only."
             )
         }
-        guard params.duration == 10 else {
-            throw CustomGenerationError.unsupported("The custom video model supports 10-second videos only.")
+        guard params.duration > 0 else {
+            throw CustomGenerationError.unsupported("The custom video duration must be positive.")
         }
         guard params.resolution == nil || params.resolution == "768p" else {
             throw CustomGenerationError.unsupported("The custom video model supports 768p output only.")
@@ -59,7 +59,7 @@ struct CustomGenerationRunner: Sendable {
                 prompt: params.prompt,
                 width: 1366,
                 height: 768,
-                seconds: "10",
+                seconds: String(params.duration),
                 generateAudio: nil,
                 frameImages: frameImages
             )
