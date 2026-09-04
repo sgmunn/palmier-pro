@@ -26,9 +26,9 @@ four narrow seams:
 3. reference delivery and job execution;
 4. pending-job recovery.
 
-Start with image generation. Add video only after one image request works from both
-the generation panel and the Agent/MCP tool path. Add audio after video recovery is
-proven. This keeps every phase usable end to end.
+This sequence has now been completed through image, asynchronous video, and the app's
+audio transport. The remaining local work is an audio executor in the gateway, plus
+optional model descriptors and workflows that can be added without changing Palmier.
 
 ## Local ComfyUI target
 
@@ -56,14 +56,17 @@ ComfyUI gateway
 Local ComfyUI
 ```
 
-The initial local model set is:
+The currently advertised local model set is:
 
 | Media | Stable model ID | Workflow | Role |
 | --- | --- | --- | --- |
 | Image | `local/z-image-turbo` | Z-Image Turbo text-to-image | Fast default image generation |
-| Image | `local/flux-2-dev` | FLUX.2 Dev text-to-image | Optional higher-cost local image generation |
-| Video | `local/ltx-2.5-distilled` | LTX 2.5 distilled text-to-video | Local five-second video generation |
-| Audio | `local/kokoro-82m` | Kokoro 82M text-to-speech | Local configured-voice speech generation |
+| Video | `local/ltx-2.5-distilled` | LTX 2.5 distilled text-to-video or image-to-video | Local five-second video generation |
+
+Kokoro text-to-speech is the next local endpoint to implement. FLUX.2 Dev or other
+image providers remain optional experiments rather than advertised capabilities.
+Each must have an installed model, a tested workflow, and an accurate descriptor
+before the gateway includes it in the catalog.
 
 The gateway may later expose explicit cloud-backed model IDs, such as a Together
 image model, through the same endpoint shapes. It must never silently fall back from
@@ -85,10 +88,11 @@ capabilities, or replace a workflow and then refresh Palmier's model list withou
 rebuilding or restarting either process. Duplicate IDs, malformed bindings, and
 unsupported execution kinds fail explicitly.
 
-The current generic executor supports image descriptors. Adding LTX 2.5 requires
-one video executor and the existing asynchronous `/v2/videos` lifecycle; after that
-engine exists, individual LTX workflow variants can be added and changed through
-descriptors without rebuilding Palmier Pro or the gateway.
+The generic executors support synchronous image descriptors and asynchronous video
+descriptors. Video descriptors can select separate text-to-video and image-to-video
+workflows while sharing request validation, bindings, queue submission, status, and
+output delivery. Compatible workflow variants can be added or changed through
+descriptors without rebuilding Palmier Pro or restarting the gateway.
 
 Z-Image Turbo is the first implementation slice. It remains text-to-image only and
 supports the five aspect ratios already accepted by the custom image contract. The
@@ -109,13 +113,15 @@ contract keeps `generate_audio` disabled and strips generated audio if the selec
 workflow cannot avoid producing it.
 
 The reference development machine currently runs ComfyUI Desktop 0.34.2 with
-PyTorch 2.10 on Apple MPS. The official Z-Image Turbo BF16 diffusion model, Qwen 3 4B
-text encoder, VAE, and workflow template have been discovered locally. These facts
-are verification inputs, not hardcoded product paths or minimum requirements.
+PyTorch 2.10 on Apple MPS. Z-Image Turbo and the LTX 2.5 distilled INT8 workflow are
+installed and have completed real generation on this machine. MPS CPU fallback is
+required for unsupported PyTorch operators and is slower than native execution.
+These facts are verification inputs, not hardcoded product paths or minimum
+requirements.
 
 ## Implementation status
 
-Status as of September 2, 2026 on `fork/custom-providers`:
+Status as of September 4, 2026 on `fork/custom-providers`:
 
 - The selected route and gateway URL are persisted in settings; the API key is
   stored in Keychain. The custom URL defaults to `http://127.0.0.1:8190`.
@@ -133,6 +139,11 @@ Status as of September 2, 2026 on `fork/custom-providers`:
   results. A base URL ending in `/v1` is not given a duplicate version component.
 - The speech contract sends `POST /v1/audio/speech`, requests MP3 output, and
   preserves the actual supported content type and extension returned by the gateway.
+- The gateway implements the `/v2/videos` accepted-job lifecycle, maps five seconds
+  to 121 LTX frames at 24 fps, and serves the completed video through its content URL.
+- A selected starting frame is encoded by Palmier, uploaded by the gateway, and bound
+  to a dedicated LTX image-to-video workflow. The catalog advertises this capability,
+  so the panel renders an image slot instead of inserting an asset URI into the prompt.
 - `GenerationInput` persists `generationBackendID` and the resolved remote model ID,
   so completed assets retain the execution identity rather than depending on current
   settings.
@@ -152,14 +163,19 @@ Verified so far:
   `inspect_media`;
 - a separate Codex task discovered and used the Palmier MCP tools to complete the
   same 16:9 generation and read-back workflow;
-- the gateway catalog and Z-Image workflow descriptor pass gateway contract tests.
+- the gateway catalog, Z-Image workflow, LTX workflows, first-frame upload, and video
+  lifecycle pass gateway contract tests;
 - custom video generation completed through the panel and MCP with persisted backend,
-  remote-model, and provider-job provenance visible through `inspect_media`.
+  remote-model, and provider-job provenance visible through `inspect_media`;
+- the user verified real local Z-Image generation and five-second LTX generation,
+  including generation from a selected starting frame.
 
-Deliberately outside the completed Phase 1 scope:
+Deliberately outside the current local gateway scope:
 
-- reference-image generation remains unsupported until a shared upload or inline
-  reference contract is defined;
+- image-model reference inputs remain unsupported; the LTX starting-frame contract is
+  a separate, explicit video capability;
+- local audio remains unavailable until the gateway has a tested audio executor and
+  advertises an audio descriptor;
 - remote cancellation is not promised because a provider may continue work after a
   client disconnects or abandons a request;
 - generic project close, Save As, and teardown coordination remain upstream editor
@@ -219,7 +235,7 @@ GenerationView+Submit               ToolExecutor+Generate
   main actor. Only immutable results return to `GenerationService` for UI-owned
   state changes.
 
-## Proposed design
+## Resulting design
 
 ### 1. One backend selection
 
@@ -339,8 +355,8 @@ GET /v2/videos/{id}
 -> { id, status, error?, outputs?: { video_url } }
 
 Audio
-POST /v1/audio/generations
--> audio bytes/base64, or the same accepted-job shape as video
+POST /v1/audio/speech
+-> audio bytes with a supported content type
 ```
 
 Put vendor-specific field translation, authentication, webhooks, retries, and model
@@ -470,22 +486,23 @@ save the project, reopen it, and use the generated asset without Palmier credent
 
 The panel and MCP paths meet this acceptance criterion. Phase 1 is complete.
 
-### Phase 2: asynchronous video — complete
+### Phase 2: asynchronous video — implemented and locally verified
 
-Together's current [video generation API](https://docs.together.ai/docs/inference/videos/overview)
-fits the required lifecycle: create with `POST /v2/videos`, retrieve with
-`GET /v2/videos/{id}`, and download the completed `outputs.video_url`.
-Dedicated-endpoint management is not part of this phase.
+The custom contract creates with `POST /v2/videos`, retrieves with
+`GET /v2/videos/{id}`, and downloads the completed `outputs.video_url`. It supports
+Together-compatible providers and the local ComfyUI gateway without exposing
+provider-specific workflow details to Palmier. Dedicated-endpoint management is not
+part of this phase.
 
 Phase 2 implements:
 
 1. **Stable advertised model identity.** The selected gateway catalog ID is
    snapshotted into `GenerationInput.remoteModel`, so later catalog changes do not
    retarget an accepted job.
-2. **One conservative video catalog entry.** The catalog describes only the durations,
-   resolutions, aspect ratios, audio behavior, and input modes actually supported by
-   the first Together model. It exposes text-to-video and one starting frame, but no
-   end frame or general image, video, or audio references.
+2. **Conservative advertised video entries.** Each gateway catalog entry describes
+   only the durations, resolutions, aspect ratios, audio behavior, and input modes
+   its executor and workflow actually support. LTX exposes text-to-video and one
+   starting frame, but no end frame or general image, video, or audio references.
 3. **Accepted-job contracts.** Create and retrieve request/response types
    plus an immutable receipt containing backend ID, remote model ID, and job ID.
    Normalize only `queued`, `in_progress`, `completed`, and `failed`; unknown states
@@ -506,9 +523,10 @@ Phase 2 implements:
    location off the main actor, validate its HTTP response and media type, and install
    it through `commitStagedProjectMedia`. Repeated terminal polling must not install a
    second asset.
-8. **One image-to-video mode.** A prepared starting frame is sent inline through
-   Together's top-level `frame_images` contract. End frames and other reference
-   combinations remain unsupported.
+8. **One image-to-video mode.** A prepared starting frame is sent inline through the
+   top-level `frame_images` contract. The local gateway validates and uploads it to
+   ComfyUI before submitting the image-to-video workflow. End frames and other
+   reference combinations remain unsupported.
 
 Required automated coverage:
 
@@ -526,9 +544,10 @@ Acceptance: text-to-video and one supported image-to-video case complete; quitti
 after acceptance and reopening resumes the same job and installs exactly one result.
 
 Text-to-video, image-to-video, and MCP provenance read-back have been verified against
-Together. Phase 2 is complete.
+Together. Five-second local LTX text-to-video and image-to-video have also completed
+through the gateway. Phase 2 is complete.
 
-### Phase 3: audio — complete
+### Phase 3: audio client — complete; local executor planned
 
 - [x] Add one text-to-speech catalog entry using the existing audio submission path.
 - [x] Represent text-to-speech capabilities and ordered voices in the shared catalog
@@ -549,14 +568,32 @@ require them.
 Acceptance: panel and `generate_audio` use the same model validation and produce a
 ready audio asset with waveform/finalization behavior matching hosted results.
 
-The panel and MCP paths have been verified against Together. Phase 3 is complete.
+The panel and MCP paths have been verified against Together. The Palmier audio client
+phase is complete. The ComfyUI gateway does not yet advertise or execute an audio
+model; adding Kokoro text-to-speech is the next local implementation slice.
 
-### Phase 4: optional provider management
+### Phase 4: multiple gateway profiles — not planned
 
-Only add multiple in-app gateway profiles if there is a demonstrated need. Until
-then, provider/model routing belongs in the gateway. Multiple profiles require an
-explicit per-job profile ID, independent credentials, catalog namespacing, resume
-behavior when a profile is deleted, and UI for choosing the route.
+Palmier Hosted and Custom Gateway remain the only app-level routes. Provider and
+model selection belongs in the gateway, so experimenting with image, video, or audio
+workflows does not require more in-app profiles. Reconsider multiple gateway profiles
+only if a concrete requirement cannot be represented by one gateway catalog.
+
+### Remaining local gateway work
+
+1. **Add local text-to-speech.** Choose and verify a Kokoro workflow, implement the
+   gateway's synchronous `POST /v1/audio/speech` executor, advertise only the tested
+   voices and formats, and verify panel and MCP generation through finalization.
+2. **Add optional image workflows as descriptors.** Evaluate FLUX.2 Dev and other
+   providers independently. Add a stable model ID only after its installed workflow,
+   supported aspect ratios, output count, and reference behavior pass the gateway
+   contract tests. Z-Image Turbo remains the default local image model.
+3. **Expand video only from verified workflows.** Additional LTX durations,
+   resolutions, audio, or conditioning modes require measured memory behavior and a
+   successful end-to-end render before their descriptor advertises them.
+4. **Harden local operation.** Define repeatable startup for ComfyUI and the gateway,
+   add model/readiness diagnostics to health reporting, and document recovery from
+   missing models, stopped processes, and unsupported MPS operations.
 
 ## Verification matrix
 
@@ -639,7 +676,7 @@ generation call path again: upstream changes to submission validation, reference
 preprocessing, finalization, persistence, or recovery can invalidate a conflict-free
 rebase semantically.
 
-## Resolved decisions and next choice
+## Resolved decisions and next work
 
 The current design decisions are:
 
@@ -650,10 +687,12 @@ The current design decisions are:
    provider configuration;
 4. the app sends advertised stable IDs unchanged and persists the executed identity;
 5. image generation uses the OpenAI-compatible `/v1/images/generations` shape;
-6. custom selection exclusively replaces hosted generation and never falls back.
+6. custom selection exclusively replaces hosted generation and never falls back;
+7. the local gateway currently advertises Z-Image Turbo and LTX 2.5 only;
+8. Palmier does not gain per-provider configuration or multiple gateway profiles.
 
-Phase 2 uses `minimax/hailuo-02` from Together's current
-[serverless catalog](https://docs.together.ai/docs/serverless/models). The bundled
-catalog exposes its verified 10-second, 768p, 16:9 text-to-video and starting-frame
-image-to-video modes without audio. Live panel, quit/reopen, and MCP verification are
-still required before marking the acceptance criteria complete.
+The next implementation slice is local text-to-speech behind the existing
+`/v1/audio/speech` contract. Optional image and video models follow as independent,
+hot-loaded descriptors and workflows after end-to-end verification. They do not
+require Palmier changes unless they introduce a capability the shared catalog and
+request contracts cannot already express.
