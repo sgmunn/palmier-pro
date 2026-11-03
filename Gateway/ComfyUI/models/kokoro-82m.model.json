@@ -1,0 +1,37 @@
+{
+  "catalog": {
+    "id": "local/kokoro-82m",
+    "kind": "audio",
+    "displayName": "Kokoro 82M",
+    "providerName": "Local ComfyUI",
+    "description": "Fast local English text-to-speech with Kokoro 82M.",
+    "allowedEndpoints": ["audio"],
+    "responseShape": "audio",
+    "uiCapabilities": {
+      "category": "tts",
+      "voices": ["af_heart"],
+      "defaultVoice": "af_heart",
+      "supportsLyrics": false,
+      "supportsInstrumental": false,
+      "supportsStyleInstructions": false,
+      "minPromptLength": 1,
+      "maxReferenceImages": 0,
+      "maxReferenceAudios": 0,
+      "referenceImagesAndAudiosExclusive": false,
+      "supportsMultilingual": false,
+      "inputs": ["text"],
+      "promptLabel": "Enter text to speak"
+    },
+    "paidOnly": false
+  },
+  "execution": {
+    "engine": "comfy-audio",
+    "workflow": "../workflows/kokoro-82m-tts-api.json",
+    "maximumInputLength": 4000,
+    "responseFormat": "mp3",
+    "bindings": {
+      "input": { "node": "2", "input": "text" },
+      "voice": { "node": "1", "input": "speaker_name" }
+    }
+  }
+}

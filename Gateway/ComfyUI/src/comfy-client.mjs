@@ -34,6 +34,12 @@ export class ComfyClient {
     return this.submit(workflow, signal);
   }
 
+  async generateAudio(workflow, signal) {
+    const promptID = await this.submit(workflow, signal);
+    const output = await this.waitForAudio(promptID, signal);
+    return this.downloadAudio(output, signal);
+  }
+
   async uploadImage(base64, signal) {
     const image = decodeImage(base64);
     const filename = `first-frame-${randomUUID()}.${image.extension}`;
@@ -122,6 +128,31 @@ export class ComfyClient {
     throw gatewayError("Timed out waiting for ComfyUI image generation.", "generation_timeout", 504);
   }
 
+  async waitForAudio(promptID, signal) {
+    const deadline = Date.now() + this.timeoutMilliseconds;
+    while (Date.now() < deadline) {
+      if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+      const history = await this.history(promptID, signal);
+      if (history) {
+        if (history.status?.status_str === "error") {
+          throw gatewayError(comfyFailureMessage(history.status), "generation_failed");
+        }
+        if (history.status?.completed) {
+          const outputs = collectAudio(history.outputs);
+          if (outputs.length !== 1) {
+            throw gatewayError(
+              `ComfyUI returned ${outputs.length} audio outputs; expected 1.`,
+              "incomplete_output"
+            );
+          }
+          return outputs[0];
+        }
+      }
+      await delay(this.pollIntervalMilliseconds, undefined, { signal });
+    }
+    throw gatewayError("Timed out waiting for ComfyUI speech generation.", "generation_timeout", 504);
+  }
+
   async history(promptID, signal) {
     const response = await this.request(
       new URL(`history/${encodeURIComponent(promptID)}`, this.baseURL),
@@ -152,6 +183,22 @@ export class ComfyClient {
       base64: Buffer.from(await response.arrayBuffer()).toString("base64"),
       contentType,
     };
+  }
+
+  async downloadAudio(output, signal) {
+    const response = await this.request(
+      outputURL(this.baseURL, output),
+      { signal },
+      "Could not download the ComfyUI audio."
+    );
+    if (!response.ok) {
+      throw gatewayError(`ComfyUI audio download failed with HTTP ${response.status}.`, "output_download_failed");
+    }
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0];
+    if (!contentType?.startsWith("audio/")) {
+      throw gatewayError("ComfyUI output is not audio.", "invalid_output");
+    }
+    return response;
   }
 
   async request(url, init, failureMessage) {
@@ -224,6 +271,17 @@ function collectVideos(outputs, outputNodeID) {
     Array.isArray(output?.images)
       ? output.images.filter(
           (item) => validOutput(item) && /\.(mp4|mkv|mov|webm)$/i.test(item.filename)
+        )
+      : []
+  );
+}
+
+function collectAudio(outputs) {
+  if (!outputs || typeof outputs !== "object") return [];
+  return Object.values(outputs).flatMap((output) =>
+    Array.isArray(output?.audio)
+      ? output.audio.filter(
+          (item) => validOutput(item) && /\.(flac|mp3|ogg|opus|wav)$/i.test(item.filename)
         )
       : []
   );

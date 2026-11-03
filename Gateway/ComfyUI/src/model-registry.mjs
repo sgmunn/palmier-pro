@@ -33,6 +33,16 @@ export class ModelRegistry {
     return configureVideoWorkflow(descriptor, value);
   }
 
+  async prepareSpeech(value) {
+    const descriptors = await this.loadDescriptors();
+    const modelID = typeof value?.model === "string" ? value.model : "";
+    const descriptor = descriptors.find((candidate) => candidate.catalog.id === modelID);
+    if (!descriptor || descriptor.catalog.kind !== "audio") {
+      throw requestError(`Unsupported audio model '${String(value?.model ?? "")}'.`);
+    }
+    return configureSpeechWorkflow(descriptor, value);
+  }
+
   async loadDescriptors() {
     let names;
     try {
@@ -150,6 +160,30 @@ async function configureVideoWorkflow(descriptor, value) {
   };
 }
 
+async function configureSpeechWorkflow(descriptor, value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw requestError("Request body must be a JSON object.");
+  }
+  const input = typeof value.input === "string" ? value.input.trim() : "";
+  const maximumInputLength = descriptor.execution.maximumInputLength ?? 10_000;
+  if (!input) throw requestError("input must not be empty.");
+  if (input.length > maximumInputLength) {
+    throw requestError(`input exceeds ${maximumInputLength} characters.`);
+  }
+  const voices = descriptor.catalog.uiCapabilities.voices;
+  if (typeof value.voice !== "string" || !voices.includes(value.voice)) {
+    throw requestError(`Unsupported voice '${String(value.voice ?? "")}'.`);
+  }
+  if (value.response_format !== descriptor.execution.responseFormat) {
+    throw requestError(`Unsupported response_format '${String(value.response_format ?? "")}'.`);
+  }
+
+  const workflow = await loadWorkflow(descriptor);
+  setBinding(workflow, descriptor.execution.bindings.input, input, "input");
+  setBinding(workflow, descriptor.execution.bindings.voice, value.voice, "voice");
+  return { workflow, modelID: descriptor.catalog.id };
+}
+
 function validatePrompt(descriptor, value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw requestError("Request body must be a JSON object.");
@@ -190,6 +224,7 @@ function validateDescriptor(descriptor, name, descriptorURL) {
   }
   if (catalog.kind === "image") return validateImageDescriptor(descriptor);
   if (catalog.kind === "video") return validateVideoDescriptor(descriptor);
+  if (catalog.kind === "audio") return validateAudioDescriptor(descriptor);
   throw configurationError(`Model '${catalog.id}' uses unsupported kind '${catalog.kind}'.`);
 }
 
@@ -263,6 +298,23 @@ function validateVideoDescriptor(descriptor) {
     for (const value of values) validateBinding(value, catalog.id, binding);
   }
   if (execution.bindings?.seed) validateBinding(execution.bindings.seed, catalog.id, "seed");
+}
+
+function validateAudioDescriptor(descriptor) {
+  const { catalog, execution } = descriptor;
+  const capabilities = catalog.uiCapabilities;
+  if (execution?.engine !== "comfy-audio" || typeof execution.workflow !== "string") {
+    throw configurationError(`Audio model '${catalog.id}' must configure a comfy-audio workflow.`);
+  }
+  if (capabilities.category !== "tts" || !Array.isArray(capabilities.voices) ||
+      capabilities.voices.length === 0 || !capabilities.voices.includes(capabilities.defaultVoice)) {
+    throw configurationError(`Audio model '${catalog.id}' has invalid speech capabilities.`);
+  }
+  if (typeof execution.responseFormat !== "string" || !execution.responseFormat) {
+    throw configurationError(`Audio model '${catalog.id}' has no response format.`);
+  }
+  validateBinding(execution.bindings?.input, catalog.id, "input");
+  validateBinding(execution.bindings?.voice, catalog.id, "voice");
 }
 
 function validateBinding(binding, modelID, name) {

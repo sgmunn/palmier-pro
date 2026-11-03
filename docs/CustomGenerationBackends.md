@@ -62,9 +62,10 @@ The currently advertised local model set is:
 | --- | --- | --- | --- |
 | Image | `local/z-image-turbo` | Z-Image Turbo text-to-image | Fast default image generation |
 | Video | `local/ltx-2.5-distilled` | LTX 2.5 distilled text-to-video or image-to-video | Local five-second video generation |
+| Audio | `local/kokoro-82m` | Kokoro 82M text-to-speech | Local English speech generation |
 
-Kokoro text-to-speech is the next local endpoint to implement. FLUX.2 Dev or other
-image providers remain optional experiments rather than advertised capabilities.
+FLUX.2 Dev or other image providers remain optional experiments rather than
+advertised capabilities.
 Each must have an installed model, a tested workflow, and an accurate descriptor
 before the gateway includes it in the catalog.
 
@@ -88,11 +89,12 @@ capabilities, or replace a workflow and then refresh Palmier's model list withou
 rebuilding or restarting either process. Duplicate IDs, malformed bindings, and
 unsupported execution kinds fail explicitly.
 
-The generic executors support synchronous image descriptors and asynchronous video
-descriptors. Video descriptors can select separate text-to-video and image-to-video
-workflows while sharing request validation, bindings, queue submission, status, and
-output delivery. Compatible workflow variants can be added or changed through
-descriptors without rebuilding Palmier Pro or restarting the gateway.
+The generic executors support synchronous image and speech descriptors plus
+asynchronous video descriptors. Video descriptors can select separate text-to-video
+and image-to-video workflows while sharing request validation, bindings, queue
+submission, status, and output delivery. Compatible workflow variants can be added
+or changed through descriptors without rebuilding Palmier Pro or restarting the
+gateway.
 
 Z-Image Turbo is the first implementation slice. It remains text-to-image only and
 supports the five aspect ratios already accepted by the custom image contract. The
@@ -113,9 +115,10 @@ contract keeps `generate_audio` disabled and strips generated audio if the selec
 workflow cannot avoid producing it.
 
 The reference development machine currently runs ComfyUI Desktop 0.34.2 with
-PyTorch 2.10 on Apple MPS. Z-Image Turbo and the LTX 2.5 distilled INT8 workflow are
-installed and have completed real generation on this machine. MPS CPU fallback is
-required for unsupported PyTorch operators and is slower than native execution.
+PyTorch 2.10 on Apple MPS. Z-Image Turbo, the LTX 2.5 distilled INT8 workflow, and
+Kokoro 82M through ONNX Runtime are installed and have completed real generation on
+this machine. MPS CPU fallback is required for unsupported PyTorch operators and is
+slower than native execution.
 These facts are verification inputs, not hardcoded product paths or minimum
 requirements.
 
@@ -144,6 +147,8 @@ Status as of September 4, 2026 on `fork/custom-providers`:
 - A selected starting frame is encoded by Palmier, uploaded by the gateway, and bound
   to a dedicated LTX image-to-video workflow. The catalog advertises this capability,
   so the panel renders an image slot instead of inserting an asset URI into the prompt.
+- The gateway implements synchronous Kokoro speech generation through
+  `/v1/audio/speech` and advertises the verified `af_heart` voice with MP3 output.
 - `GenerationInput` persists `generationBackendID` and the resolved remote model ID,
   so completed assets retain the execution identity rather than depending on current
   settings.
@@ -168,14 +173,17 @@ Verified so far:
 - custom video generation completed through the panel and MCP with persisted backend,
   remote-model, and provider-job provenance visible through `inspect_media`;
 - the user verified real local Z-Image generation and five-second LTX generation,
-  including generation from a selected starting frame.
+  including generation from a selected starting frame;
+- a real Kokoro request through the gateway produced a valid 24 kHz mono MP3.
+- Palmier MCP generated and finalized a Kokoro MP3 with custom-gateway and remote-model
+  provenance readable through `inspect_media`.
 
 Deliberately outside the current local gateway scope:
 
 - image-model reference inputs remain unsupported; the LTX starting-frame contract is
   a separate, explicit video capability;
-- local audio remains unavailable until the gateway has a tested audio executor and
-  advertises an audio descriptor;
+- additional Kokoro voices and languages remain unadvertised until their workflow
+  mappings and output have been verified;
 - remote cancellation is not promised because a provider may continue work after a
   client disconnects or abandons a request;
 - generic project close, Save As, and teardown coordination remain upstream editor
@@ -547,7 +555,7 @@ Text-to-video, image-to-video, and MCP provenance read-back have been verified a
 Together. Five-second local LTX text-to-video and image-to-video have also completed
 through the gateway. Phase 2 is complete.
 
-### Phase 3: audio client — complete; local executor planned
+### Phase 3: audio — implemented and locally verified
 
 - [x] Add one text-to-speech catalog entry using the existing audio submission path.
 - [x] Represent text-to-speech capabilities and ordered voices in the shared catalog
@@ -568,9 +576,10 @@ require them.
 Acceptance: panel and `generate_audio` use the same model validation and produce a
 ready audio asset with waveform/finalization behavior matching hosted results.
 
-The panel and MCP paths have been verified against Together. The Palmier audio client
-phase is complete. The ComfyUI gateway does not yet advertise or execute an audio
-model; adding Kokoro text-to-speech is the next local implementation slice.
+The panel and MCP paths have been verified against Together. The local gateway now
+executes Kokoro 82M through ComfyUI, advertises the verified `af_heart` voice, and
+returns MP3 audio through the same Palmier contract. MCP finalization is verified;
+live panel selection and project reopen remain manual acceptance checks.
 
 ### Phase 4: multiple gateway profiles — not planned
 
@@ -581,17 +590,18 @@ only if a concrete requirement cannot be represented by one gateway catalog.
 
 ### Remaining local gateway work
 
-1. **Add local text-to-speech.** Choose and verify a Kokoro workflow, implement the
-   gateway's synchronous `POST /v1/audio/speech` executor, advertise only the tested
-   voices and formats, and verify panel and MCP generation through finalization.
-2. **Add optional image workflows as descriptors.** Evaluate FLUX.2 Dev and other
+1. **Finish Palmier UI acceptance.** Generate Kokoro speech from the panel, inspect
+   the ready asset and waveform, then save and reopen the project.
+2. **Expand Kokoro conservatively.** Test additional voices and languages before
+   adding them to the hot-loaded descriptor.
+3. **Add optional image workflows as descriptors.** Evaluate FLUX.2 Dev and other
    providers independently. Add a stable model ID only after its installed workflow,
    supported aspect ratios, output count, and reference behavior pass the gateway
    contract tests. Z-Image Turbo remains the default local image model.
-3. **Expand video only from verified workflows.** Additional LTX durations,
+4. **Expand video only from verified workflows.** Additional LTX durations,
    resolutions, audio, or conditioning modes require measured memory behavior and a
    successful end-to-end render before their descriptor advertises them.
-4. **Harden local operation.** Define repeatable startup for ComfyUI and the gateway,
+5. **Harden local operation.** Define repeatable startup for ComfyUI and the gateway,
    add model/readiness diagnostics to health reporting, and document recovery from
    missing models, stopped processes, and unsupported MPS operations.
 
@@ -688,11 +698,11 @@ The current design decisions are:
 4. the app sends advertised stable IDs unchanged and persists the executed identity;
 5. image generation uses the OpenAI-compatible `/v1/images/generations` shape;
 6. custom selection exclusively replaces hosted generation and never falls back;
-7. the local gateway currently advertises Z-Image Turbo and LTX 2.5 only;
+7. the local gateway currently advertises Z-Image Turbo, LTX 2.5, and Kokoro 82M;
 8. Palmier does not gain per-provider configuration or multiple gateway profiles.
 
-The next implementation slice is local text-to-speech behind the existing
-`/v1/audio/speech` contract. Optional image and video models follow as independent,
-hot-loaded descriptors and workflows after end-to-end verification. They do not
-require Palmier changes unless they introduce a capability the shared catalog and
-request contracts cannot already express.
+The next acceptance step is generating Kokoro speech through Palmier's panel, then
+verifying the waveform and project reopen. Additional voices and optional image or
+video models follow as independent, hot-loaded descriptors and workflows after
+end-to-end verification. They do not require Palmier changes unless they introduce
+a capability the shared catalog and request contracts cannot already express.

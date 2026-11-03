@@ -30,6 +30,13 @@ export async function createGatewayServer({ apiKey, comfyClient, modelRegistry }
           models: await modelRegistry.catalog(),
         });
       }
+      if (request.method === "POST" && pathname === "/v1/audio/speech") {
+        const payload = JSON.parse(await readBody(request));
+        const prepared = await modelRegistry.prepareSpeech(payload);
+        const controller = requestAbortController(request);
+        const upstream = await comfyClient.generateAudio(prepared.workflow, controller.signal);
+        return sendMedia(response, upstream, "audio/mpeg");
+      }
       if (request.method === "POST" && pathname === "/v2/videos") {
         const payload = JSON.parse(await readBody(request, maximumVideoRequestBytes));
         const prepared = await modelRegistry.prepareVideo(payload);
@@ -138,7 +145,11 @@ async function sendVideo(response, comfyClient, jobID, request) {
     return sendError(response, 409, "output_not_ready", "Video output is not ready.");
   }
   const upstream = await comfyClient.fetchVideo(state.output, controller.signal);
-  const headers = { "Content-Type": upstream.headers.get("content-type") ?? "video/mp4" };
+  return sendMedia(response, upstream, "video/mp4");
+}
+
+async function sendMedia(response, upstream, fallbackContentType) {
+  const headers = { "Content-Type": upstream.headers.get("content-type") ?? fallbackContentType };
   const contentLength = upstream.headers.get("content-length");
   if (contentLength) headers["Content-Length"] = contentLength;
   response.writeHead(200, headers);

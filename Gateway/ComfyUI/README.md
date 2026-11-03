@@ -19,6 +19,13 @@ For LTX 2.5 video generation, ComfyUI also needs:
 - `gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors` in `text_encoders`;
 - `ltx-2.5-video-vae-conv-bf16.safetensors` and `ltx-2.5-audio-vae-bf16.safetensors` in `vae`.
 
+For Kokoro speech generation, install
+[`stavsap/comfyui-kokoro`](https://github.com/stavsap/comfyui-kokoro) and its Python
+requirements in the ComfyUI environment. The verified node revision is
+`cfb59b5605b351e196182c836f0b48c1a784e52f`. Its ONNX model and voice data download
+on the first workflow execution. The gateway initially advertises only the verified
+`af_heart` voice and returns 128 kbps MP3 audio.
+
 Start the gateway with a local bearer token:
 
 ```bash
@@ -50,13 +57,15 @@ ID and point it to an API-format ComfyUI workflow. The descriptor and workflow a
 re-read on the next refresh or generation request. Invalid descriptors fail the
 catalog request; unsupported model IDs fail rather than falling back.
 
-The descriptor executors support image workflows and asynchronous video workflows.
+The descriptor executors support image workflows, asynchronous video workflows, and
+synchronous speech workflows.
 The LTX descriptor accepts Palmier's 5-second, 768p, 16:9 text-to-video request,
 renders 121 frames at 24 fps, and exposes the completed MP4 through the gateway's
 `/v2/videos` job lifecycle. An optional first-frame image selects the LTX
 image-to-video workflow; the gateway uploads it to ComfyUI and binds the returned
 input path before submission. Audio generation is not advertised or accepted.
-Audio model entries must not be advertised until their executor exists.
+The Kokoro descriptor accepts Palmier's OpenAI-compatible `/v1/audio/speech` request,
+waits for one ComfyUI audio output, and streams the MP3 response back to Palmier.
 
 The gateway binds to localhost unless `PALMIER_GATEWAY_HOST` is set. Optional
 configuration:

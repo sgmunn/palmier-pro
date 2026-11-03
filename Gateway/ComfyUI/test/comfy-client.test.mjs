@@ -63,6 +63,37 @@ test("reports and downloads a completed ComfyUI video", async () => {
   assert.equal(response.headers.get("content-type"), "video/mp4");
 });
 
+test("submits, waits for, and downloads one audio output", async () => {
+  const client = new ComfyClient({
+    pollIntervalMilliseconds: 1,
+    fetchImplementation: async (url) => {
+      if (String(url).endsWith("/prompt")) {
+        return Response.json({ prompt_id: "prompt-1" });
+      }
+      if (String(url).endsWith("/history/prompt-1")) {
+        return Response.json({
+          "prompt-1": {
+            status: { completed: true, status_str: "success" },
+            outputs: {
+              3: {
+                audio: [{ filename: "speech.mp3", subfolder: "palmier", type: "output" }],
+              },
+            },
+          },
+        });
+      }
+      return new Response(new Uint8Array([1, 2, 3]), {
+        headers: { "Content-Type": "audio/mpeg" },
+      });
+    },
+  });
+
+  const response = await client.generateAudio({ 1: { class_type: "Example", inputs: {} } });
+
+  assert.equal(response.headers.get("content-type"), "audio/mpeg");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), new Uint8Array([1, 2, 3]));
+});
+
 test("uploads and binds a starting frame before submitting video", async () => {
   const requests = [];
   const client = new ComfyClient({
@@ -112,6 +143,20 @@ test("refuses partial ComfyUI output", async () => {
   });
 
   await assert.rejects(() => client.generateImages({}, 2), /returned 1 image; expected 2/);
+});
+
+test("refuses missing ComfyUI audio output", async () => {
+  const client = new ComfyClient({
+    pollIntervalMilliseconds: 1,
+    fetchImplementation: async (url) => {
+      if (String(url).endsWith("/prompt")) return Response.json({ prompt_id: "prompt-1" });
+      return Response.json({
+        "prompt-1": { status: { completed: true, status_str: "success" }, outputs: {} },
+      });
+    },
+  });
+
+  await assert.rejects(() => client.generateAudio({}), /returned 0 audio outputs; expected 1/);
 });
 
 test("reports an unavailable ComfyUI service", async () => {

@@ -65,12 +65,50 @@ test("advertises the configured model catalog", async (context) => {
 
   assert.equal(response.status, 200);
   assert.equal(body.catalogVersion, 1);
-  assert.equal(body.models.length, 2);
+  assert.equal(body.models.length, 3);
   assert.deepEqual(body.models.map((model) => model.id), [
+    "local/kokoro-82m",
     "local/ltx-2.5-distilled",
     "local/z-image-turbo",
   ]);
-  assert.equal(body.models[0].kind, "video");
+  assert.equal(body.models[0].kind, "audio");
+});
+
+test("serves the Palmier speech contract", async (context) => {
+  let submittedWorkflow;
+  const server = await createGatewayServer({
+    apiKey: "test-key",
+    comfyClient: {
+      async generateAudio(workflow) {
+        submittedWorkflow = workflow;
+        return new Response(new Uint8Array([1, 2, 3]), {
+          headers: { "Content-Type": "audio/mpeg", "Content-Length": "3" },
+        });
+      },
+    },
+    modelRegistry,
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  context.after(() => server.close());
+  const address = server.address();
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/v1/audio/speech`, {
+    method: "POST",
+    headers: { Authorization: "Bearer test-key", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "local/kokoro-82m",
+      input: "Palmier local speech generation is ready.",
+      voice: "af_heart",
+      response_format: "mp3",
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "audio/mpeg");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), new Uint8Array([1, 2, 3]));
+  assert.equal(submittedWorkflow["1"].inputs.speaker_name, "af_heart");
+  assert.equal(submittedWorkflow["2"].inputs.text, "Palmier local speech generation is ready.");
 });
 
 test("serves the asynchronous Palmier video lifecycle", async (context) => {

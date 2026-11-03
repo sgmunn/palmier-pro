@@ -1,0 +1,26 @@
+{
+  "1": {
+    "class_type": "KokoroSpeaker",
+    "inputs": {
+      "speaker_name": "af_heart"
+    }
+  },
+  "2": {
+    "class_type": "KokoroGenerator",
+    "inputs": {
+      "text": "Palmier local speech generation",
+      "speaker": ["1", 0],
+      "speed": 1.0,
+      "lang": "English"
+    }
+  },
+  "3": {
+    "class_type": "SaveAudioAdvanced",
+    "inputs": {
+      "audio": ["2", 0],
+      "filename_prefix": "palmier/kokoro",
+      "format": "mp3",
+      "format.quality": "128k"
+    }
+  }
+}
